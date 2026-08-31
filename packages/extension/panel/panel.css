@@ -1,0 +1,627 @@
+/* Family design language (shared with sibling tools): precision instrument.
+   Near-monochrome inks anchored on logo ink #1f2328, hairline borders, 4/8
+   spacing, semantic color for state only. Space Grotesk carries sentences and
+   buttons, JetBrains Mono carries labels, statuses, and data. */
+
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url("fonts/space-grotesk-var.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("fonts/jetbrains-mono-var.woff2") format("woff2");
+}
+
+:root {
+  color-scheme: light dark;
+  --font-display: "Space Grotesk", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --bg: #f5f5f3;
+  --surface: #ffffff;
+  --surface-2: #ecedea;
+  --ink: #1f2328;
+  --muted: #656d76;
+  --line: #dfe1de;
+  --ok: #1a7f37;
+  --warn: #9a6700;
+  --down: #b42318;
+  --warn-line: #e4cf9e;
+  --warn-surface: #fcf7ec;
+  --down-line: #eab7b1;
+  --down-surface: #fdf2f1;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #131417;
+    --surface: #1b1d21;
+    --surface-2: #26292e;
+    --ink: #e7e9eb;
+    --muted: #9aa1a8;
+    --line: #2c2f34;
+    --ok: #57ab5a;
+    --warn: #d29922;
+    --down: #e5534b;
+    --warn-line: #57461c;
+    --warn-surface: #201d15;
+    --down-line: #5f2b26;
+    --down-surface: #251817;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Author display rules below (flex sections, banner) would otherwise beat the
+   UA stylesheet's [hidden] { display: none }. */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+html.platform-firefox {
+  width: 380px;
+}
+
+html.platform-firefox body {
+  min-height: 480px;
+}
+
+body {
+  font: 400 13px/1.55 var(--font-display);
+  background: var(--bg);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ---- Header ---- */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.brand-mark {
+  display: block;
+  flex: none;
+  color: var(--ink);
+}
+
+.wordmark {
+  font: 600 15px/1 var(--font-display);
+  letter-spacing: 0.01em;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.header-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.engine-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 500 10px/1 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
+}
+
+.status-dot[data-state="ok"] {
+  background: var(--ok);
+}
+
+.engine-status:has(.status-dot[data-state="ok"]) {
+  color: var(--ok);
+}
+
+.status-dot[data-state="warn"] {
+  background: var(--warn);
+}
+
+.engine-status:has(.status-dot[data-state="warn"]) {
+  color: var(--warn);
+}
+
+.status-dot[data-state="down"] {
+  background: var(--down);
+}
+
+.engine-status:has(.status-dot[data-state="down"]) {
+  color: var(--down);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .status-dot[data-state="probing"] {
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.icon-button[aria-expanded="true"] {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+/* ---- Layout ---- */
+
+main {
+  flex: 1;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+h2 {
+  font: 600 10px/1 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  margin: 4px 2px 0;
+}
+
+/* ---- Status banner ---- */
+
+#status-banner {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#status-banner[data-tone="down"] {
+  border-color: var(--down-line);
+  background: var(--down-surface);
+}
+
+#status-banner[data-tone="warn"] {
+  border-color: var(--warn-line);
+  background: var(--warn-surface);
+}
+
+#status-banner .banner-title {
+  font: 600 13.5px/1.4 var(--font-display);
+  margin: 0;
+}
+
+#status-banner p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#status-banner ol {
+  margin: 0;
+  padding-left: 1.3em;
+  color: var(--muted);
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#status-banner code {
+  display: block;
+  font: 400 11px/1.6 var(--font-mono);
+  background: var(--surface-2);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-top: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: all;
+  color: var(--ink);
+}
+
+#status-banner .banner-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ---- Controls ---- */
+
+.controls {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+}
+
+.inline-field {
+  flex: 1;
+}
+
+button {
+  font: 500 12px/1 var(--font-display);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--ink);
+  opacity: 0.88;
+}
+
+/* A disabled primary drops to the quiet outlined style so it stops competing
+   with the banner that explains why it is disabled. */
+button.primary:disabled {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--muted);
+  opacity: 1;
+}
+
+.run-status {
+  margin: 0 2px;
+  font: 500 10px/1.4 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+/* ---- Summary output ---- */
+
+.summary {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 14px 16px;
+  overflow-wrap: anywhere;
+}
+
+/* Empty and working states: the logo motif (page lines condensing into one
+   bold summary line) is the panel's single expressive element. */
+.summary-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 28px 8px;
+  text-align: center;
+}
+
+.summary-empty .glyph {
+  display: block;
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.summary-empty p {
+  margin: 0;
+  max-width: 30ch;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.summary-empty.working p {
+  visibility: hidden;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .summary-empty.working .glyph line {
+    animation: condense 1.5s ease-in-out infinite;
+  }
+  .summary-empty.working .glyph line:nth-child(2) {
+    animation-delay: 0.12s;
+  }
+  .summary-empty.working .glyph line:nth-child(3) {
+    animation-delay: 0.24s;
+  }
+  .summary-empty.working .glyph line:nth-child(4) {
+    animation-delay: 0.36s;
+  }
+  .summary-empty.working .glyph line:nth-child(5) {
+    animation-delay: 0.48s;
+  }
+}
+
+@keyframes condense {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.summary .summary-title {
+  font: 600 15px/1.35 var(--font-display);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+  margin: 0 0 8px;
+}
+
+.summary .truncated-note {
+  font: 400 10.5px/1.5 var(--font-mono);
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+
+.summary p,
+.summary ul,
+.summary ol {
+  margin: 0 0 10px;
+}
+
+.summary > :last-child {
+  margin-bottom: 0;
+}
+
+.summary ul,
+.summary ol {
+  padding-left: 1.3em;
+}
+
+.summary li {
+  margin-bottom: 4px;
+}
+
+.summary h3,
+.summary h4,
+.summary h5,
+.summary h6 {
+  font: 600 13px/1.4 var(--font-display);
+  margin: 12px 0 6px;
+}
+
+/* Tables scroll inside their own container; the panel never scrolls sideways. */
+.summary .table-wrap {
+  overflow-x: auto;
+  margin: 0 0 10px;
+}
+
+.summary table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+
+.summary th {
+  font: 600 10px/1.4 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  text-align: left;
+}
+
+.summary th,
+.summary td {
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.summary th:last-child,
+.summary td:last-child {
+  padding-right: 0;
+}
+
+.summary tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.summary code {
+  font: 400 0.88em/1.5 var(--font-mono);
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.summary .error {
+  color: var(--down);
+  margin: 0;
+}
+
+.summary-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+/* ---- Settings ---- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.field-label {
+  font: 600 10px/1 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+}
+
+.field-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+input,
+select {
+  font: 400 12px/1.5 var(--font-display);
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 10px;
+  width: 100%;
+  accent-color: var(--ink);
+}
+
+/* Endpoint, model, and numeric values are data: render them in mono. */
+input[type="url"],
+input[type="text"],
+input[type="number"] {
+  font-family: var(--font-mono);
+}
+
+/* Switch: quiet track, solid ink when on, per the family design language. */
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.switch-text {
+  font-size: 12px;
+}
+
+input.switch {
+  appearance: none;
+  width: 34px;
+  height: 20px;
+  padding: 0;
+  margin: 0;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  cursor: pointer;
+  position: relative;
+}
+
+input.switch::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+input.switch:checked {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+input.switch:checked::before {
+  left: 16px;
+  background: var(--bg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  input.switch::before {
+    transition: left 120ms ease;
+  }
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.settings-status {
+  margin: 0 2px;
+  font: 500 11px/1.5 var(--font-mono);
+  color: var(--muted);
+}
+
+.settings-status[data-tone="error"] {
+  color: var(--down);
+}
+
+.settings-status[data-tone="ok"] {
+  color: var(--ok);
+}

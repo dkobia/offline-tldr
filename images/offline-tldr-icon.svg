@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Offline TL;DR">
+  <title>Offline TL;DR</title>
+  <desc>Simplified Offline TL;DR mark for small sizes (32 px and up). The
+    full-detail logo is images/offline-tldr.svg; this variant uses fewer,
+    thicker lines. Rendered to PNG by scripts/render-icons.sh.</desc>
+  <circle cx="64" cy="64" r="58" fill="#ffffff"/>
+  <g stroke="#1f2328" stroke-linecap="round" fill="none">
+    <g stroke-width="8">
+      <line x1="28" y1="38" x2="100" y2="38"/>
+      <line x1="36" y1="54" x2="92" y2="54"/>
+      <line x1="44" y1="70" x2="84" y2="70"/>
+    </g>
+    <line x1="50" y1="90" x2="78" y2="90" stroke-width="11"/>
+  </g>
+  <circle cx="64" cy="64" r="58" fill="none" stroke="#1f2328" stroke-width="6"/>
+</svg>

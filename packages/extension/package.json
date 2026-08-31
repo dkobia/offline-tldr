@@ -1,0 +1,14 @@
+{
+  "name": "@offline-tldr/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@offline-tldr/core": "workspace:*",
+    "@offline-tldr/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.280",
+    "@types/firefox-webext-browser": "^120.0.4"
+  }
+}

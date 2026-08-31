@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Offline TL;DR</title>
+    <link rel="stylesheet" href="panel.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <!-- Logo mark: page lines condensing into one bold summary line. -->
+        <svg class="brand-mark" width="20" height="20" viewBox="0 0 128 128" aria-hidden="true">
+          <circle cx="64" cy="64" r="58" fill="none" stroke="currentColor" stroke-width="7" />
+          <g stroke="currentColor" stroke-linecap="round" fill="none">
+            <line x1="28" y1="38" x2="100" y2="38" stroke-width="9" />
+            <line x1="36" y1="54" x2="92" y2="54" stroke-width="9" />
+            <line x1="44" y1="70" x2="84" y2="70" stroke-width="9" />
+            <line x1="50" y1="90" x2="78" y2="90" stroke-width="13" />
+          </g>
+        </svg>
+        <h1 class="wordmark">Offline TL;DR</h1>
+      </div>
+      <div class="header-side">
+        <div class="engine-status" role="status">
+          <span id="status-dot" class="status-dot" data-state="probing"></span>
+          <span id="status-text">Checking</span>
+        </div>
+        <button id="settings-toggle" class="icon-button" type="button" aria-label="Settings" title="Settings">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7zm7.43-2.53c.04-.32.07-.64.07-.97s-.03-.66-.07-.97l2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1a7.31 7.31 0 0 0-1.67-.97l-.38-2.65A.5.5 0 0 0 14 2h-4a.5.5 0 0 0-.5.42l-.38 2.65c-.6.25-1.16.57-1.67.97l-2.49-1a.5.5 0 0 0-.61.22l-2 3.46a.5.5 0 0 0 .12.64L4.57 11c-.04.32-.07.65-.07.98s.03.66.07.97l-2.11 1.65a.5.5 0 0 0-.12.64l2 3.46c.14.24.42.34.68.24l2.49-1c.51.4 1.06.72 1.67.97l.38 2.65A.5.5 0 0 0 10 22h4a.5.5 0 0 0 .5-.42l.38-2.65c.6-.25 1.16-.57 1.67-.97l2.49 1c.26.1.54 0 .68-.24l2-3.46a.5.5 0 0 0-.12-.64l-2.15-1.65z"
+            />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <section id="summary-view">
+        <div id="status-banner" hidden></div>
+
+        <div class="controls">
+          <label class="field inline-field">
+            <span class="field-label">Format</span>
+            <select id="format-select">
+              <option value="bullets">Bullet points</option>
+              <option value="executive">Executive summary</option>
+              <option value="one-liner">One-liner</option>
+            </select>
+          </label>
+          <button id="summarize-button" class="primary" type="button" disabled>Summarize this page</button>
+        </div>
+
+        <p id="run-status" class="run-status" hidden></p>
+
+        <article id="summary-output" class="summary" aria-live="polite">
+          <div class="summary-empty">
+            <!-- Large glyph, same motif as the brand mark; its lines pulse while a summary runs. -->
+            <svg class="glyph" width="64" height="64" viewBox="0 0 200 200" aria-hidden="true">
+              <g stroke="currentColor" stroke-linecap="round" fill="none">
+                <line x1="44" y1="58" x2="156" y2="58" stroke-width="9" />
+                <line x1="53" y1="77" x2="147" y2="77" stroke-width="9" />
+                <line x1="62" y1="96" x2="138" y2="96" stroke-width="9" />
+                <line x1="71" y1="115" x2="129" y2="115" stroke-width="9" />
+                <line x1="82" y1="143" x2="118" y2="143" stroke-width="13" />
+              </g>
+            </svg>
+            <p>The summary of the current page will appear here.</p>
+          </div>
+        </article>
+      </section>
+
+      <section id="settings-view" hidden>
+        <h2>Settings</h2>
+
+        <label class="field">
+          <span class="field-label">Engine</span>
+          <select id="engine-select"></select>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Endpoint</span>
+          <input id="endpoint-input" type="url" spellcheck="false" placeholder="http://localhost:11434" />
+          <span class="field-hint">Localhost only. Page content never leaves this machine.</span>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Model</span>
+          <input id="model-input" type="text" list="model-options" spellcheck="false" placeholder="llama3.2" />
+          <datalist id="model-options"></datalist>
+          <span id="model-hint" class="field-hint">Use “Test connection” to list the models your server offers.</span>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Max summary length (words)</span>
+          <input id="max-words-input" type="number" min="30" max="600" step="10" />
+        </label>
+
+        <label class="field">
+          <span class="field-label">Auto-summarize</span>
+          <span class="switch-row">
+            <input id="auto-summarize-input" class="switch" type="checkbox" role="switch" />
+            <span class="switch-text">Summarize pages as you open them</span>
+          </span>
+          <span class="field-hint">Runs while the panel is open, whenever the page you’re viewing changes.</span>
+        </label>
+
+        <div class="settings-actions">
+          <button id="test-connection-button" type="button">Test connection</button>
+          <button id="save-settings-button" class="primary" type="button">Save</button>
+        </div>
+        <p id="settings-status" class="settings-status" hidden></p>
+      </section>
+    </main>
+
+    <script type="module" src="panel.js"></script>
+  </body>
+</html>

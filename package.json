@@ -1,0 +1,26 @@
+{
+  "name": "offline-tldr",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@11.24.0",
+  "scripts": {
+    "build": "node scripts/build.mjs chrome && node scripts/build.mjs firefox",
+    "build:chrome": "node scripts/build.mjs chrome",
+    "build:firefox": "node scripts/build.mjs firefox",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --build",
+    "clean": "rm -rf dist packages/*/dist packages/*/*.tsbuildinfo"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.28.2",
+    "linkedom": "^0.18.13",
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.11"
+  }
+}

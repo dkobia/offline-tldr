@@ -1,0 +1,15 @@
+{
+  "background": {
+    "scripts": ["background.js"],
+    "type": "module"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "offline-tldr@kobia.net",
+      "strict_min_version": "121.0"
+    }
+  },
+  "action": {
+    "default_popup": "panel.html"
+  }
+}

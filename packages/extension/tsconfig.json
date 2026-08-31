@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["chrome", "firefox-webext-browser"],
+    "paths": {
+      "@platform": ["./platform/chrome.ts"]
+    }
+  },
+  "include": ["platform", "background", "content", "panel", "lib"],
+  "references": [{ "path": "../shared" }, { "path": "../core" }]
+}

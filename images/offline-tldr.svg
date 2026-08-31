@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="Offline TL;DR">
+  <title>Offline TL;DR</title>
+  <desc>Lines of page text taper downward into a single short bold line: a page
+    condensed to its TL;DR. Monochrome on an opaque disc so the mark stays
+    legible on any background.</desc>
+  <!-- Opaque disc keeps the mark legible on any background, including
+       renderers that ignore prefers-color-scheme (Finder, Slack, etc.). -->
+  <circle cx="100" cy="100" r="92" fill="#ffffff"/>
+  <g stroke="#1f2328" stroke-linecap="round" fill="none">
+    <g stroke-width="9">
+      <line x1="44" y1="58" x2="156" y2="58"/>
+      <line x1="53" y1="77" x2="147" y2="77"/>
+      <line x1="62" y1="96" x2="138" y2="96"/>
+      <line x1="71" y1="115" x2="129" y2="115"/>
+    </g>
+    <line x1="82" y1="143" x2="118" y2="143" stroke-width="13"/>
+  </g>
+  <circle cx="100" cy="100" r="92" fill="none" stroke="#1f2328" stroke-width="3"/>
+</svg>

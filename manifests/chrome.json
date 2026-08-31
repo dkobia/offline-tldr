@@ -1,0 +1,11 @@
+{
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "minimum_chrome_version": "120",
+  "side_panel": {
+    "default_path": "panel.html"
+  },
+  "permissions": ["storage", "activeTab", "scripting", "sidePanel"]
+}

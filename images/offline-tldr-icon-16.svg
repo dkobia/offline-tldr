@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" role="img" aria-label="Offline TL;DR">
+  <title>Offline TL;DR</title>
+  <desc>Hand-tuned 16 px Offline TL;DR mark: three tapering text lines ending
+    in a bold summary line, on integer coordinates so it stays crisp on the
+    pixel grid. Rendered to PNG by scripts/render-icons.sh.</desc>
+  <circle cx="8" cy="8" r="7.5" fill="#ffffff"/>
+  <g stroke="#1f2328" stroke-linecap="round" fill="none">
+    <line x1="4.5" y1="5" x2="11.5" y2="5" stroke-width="1.5"/>
+    <line x1="5.5" y1="8" x2="10.5" y2="8" stroke-width="1.5"/>
+    <line x1="6.5" y1="11" x2="9.5" y2="11" stroke-width="2"/>
+  </g>
+  <circle cx="8" cy="8" r="7" fill="none" stroke="#1f2328" stroke-width="1"/>
+</svg>

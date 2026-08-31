@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.idea/
+.DS_Store
+docs/
+CLAUDE.local.md
