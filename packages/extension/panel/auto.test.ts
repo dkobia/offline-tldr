@@ -44,15 +44,17 @@ function page(tabId: number, path = "/"): ActivePage {
 /**
  * Test double for the controller's effects. getPage answers from a queue of
  * results (an entry may be a promise, letting tests hold an evaluation open);
- * start marks a run in flight, which cancel then reports and clears.
+ * hasState answers from the set of URLs the background is said to hold state
+ * for; start only records.
  */
 function makeDeps() {
   const state = {
     enabled: true,
-    inFlight: false,
     started: [] as ActivePage[],
-    canceled: 0,
     lookups: 0,
+    stateChecks: 0,
+    /** URLs the background already has an entry for. */
+    settled: new Set<string>(),
     pages: [] as (ActivePage | null | Promise<ActivePage | null>)[],
   };
   const deps: AutoRunDeps = {
@@ -61,17 +63,12 @@ function makeDeps() {
       state.lookups += 1;
       return Promise.resolve(state.pages.shift() ?? null);
     },
-    cancel: () => {
-      if (!state.inFlight) {
-        return false;
-      }
-      state.inFlight = false;
-      state.canceled += 1;
-      return true;
+    hasState: (checked) => {
+      state.stateChecks += 1;
+      return Promise.resolve(state.settled.has(checked.url));
     },
     start: (started) => {
       state.started.push(started);
-      state.inFlight = true;
     },
   };
   return { deps, state };
@@ -91,10 +88,9 @@ describe("createAutoRun", () => {
     auto.trigger();
     await flush();
     expect(state.started).toEqual([page(1)]);
-    expect(state.canceled).toBe(0);
   });
 
-  it("cancels the in-flight run and starts over when the page changes", async () => {
+  it("starts over when the page changes", async () => {
     const { deps, state } = makeDeps();
     const auto = createAutoRun(deps);
     state.pages = [page(1, "/a"), page(1, "/b")];
@@ -103,7 +99,6 @@ describe("createAutoRun", () => {
     auto.trigger();
     await flush();
     expect(state.started).toEqual([page(1, "/a"), page(1, "/b")]);
-    expect(state.canceled).toBe(1);
   });
 
   it("queues a trigger arriving mid-evaluation instead of dropping it", async () => {
@@ -121,31 +116,35 @@ describe("createAutoRun", () => {
     expect(state.started).toEqual([page(1), page(2)]);
   });
 
-  it("cancels when moving to an ineligible page but keeps a finished summary's key", async () => {
+  it("skips a page the background already has state for, and stops asking about it", async () => {
     const { deps, state } = makeDeps();
     const auto = createAutoRun(deps);
-    // In flight on page 1, then an ineligible destination: cancel, no start,
-    // and returning to page 1 re-runs it.
+    state.settled.add(page(1, "/seen").url);
+    state.pages = [page(1, "/seen"), page(1, "/seen")];
+    auto.trigger();
+    await flush();
+    auto.trigger();
+    await flush();
+    expect(state.started).toEqual([]);
+    // The settled page's key was remembered: the second trigger deduped
+    // before reaching another state lookup.
+    expect(state.stateChecks).toBe(1);
+  });
+
+  it("leaves the key on an ineligible page, so returning does not re-run", async () => {
+    const { deps, state } = makeDeps();
+    const auto = createAutoRun(deps);
+    // Summarize page 1, visit an ineligible destination (new tab,
+    // browser-internal page), come back: the run belongs to the tab now and
+    // must not restart.
     state.pages = [page(1), null, page(1)];
     auto.trigger();
     await flush();
     auto.trigger();
     await flush();
-    expect(state.canceled).toBe(1);
     auto.trigger();
     await flush();
-    expect(state.started).toEqual([page(1), page(1)]);
-
-    // Finished on page 1 (nothing in flight), then ineligible: nothing to
-    // cancel, and returning to page 1 does not re-run.
-    state.inFlight = false;
-    state.pages = [null, page(1)];
-    auto.trigger();
-    await flush();
-    auto.trigger();
-    await flush();
-    expect(state.canceled).toBe(1);
-    expect(state.started).toEqual([page(1), page(1)]);
+    expect(state.started).toEqual([page(1)]);
   });
 
   it("does not re-run a page recorded via noteManualRun (the manual button)", async () => {
@@ -164,7 +163,7 @@ describe("createAutoRun", () => {
     const auto = createAutoRun(deps);
     let release!: (value: ActivePage | null) => void;
     // Manual run on page 1 begins; before its lookup resolves, an auto run
-    // for page 2 cancels it and takes over.
+    // for page 2 takes over.
     auto.noteManualRun(new Promise((resolve) => (release = resolve)));
     state.pages = [page(2)];
     auto.trigger();
@@ -177,7 +176,6 @@ describe("createAutoRun", () => {
     auto.trigger();
     await flush();
     expect(state.started).toEqual([page(2)]);
-    expect(state.canceled).toBe(0);
     // ...and returning to page 1 must run it (the stale record did not stick).
     state.pages = [page(1)];
     auto.trigger();

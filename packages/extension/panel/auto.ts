@@ -1,9 +1,14 @@
 // Auto-summarize policy: which active pages qualify for an automatic run, the
 // identity key that dedupes repeated triggers, and the controller that turns a
-// stream of "the page may have changed" signals into cancel/start effects.
+// stream of "the page may have changed" signals into start effects.
 // DOM-free and platform-free so every rule is unit-testable; main.ts only
 // supplies the effects.
+//
+// Runs belong to tabs, not to the panel (issue #7): switching away no longer
+// cancels anything - the background's single-run policy supersedes an
+// in-flight run only when a new one starts.
 
+import { pageKey } from "@offline-tldr/core";
 import type { ActivePage } from "@offline-tldr/shared";
 
 /**
@@ -13,24 +18,15 @@ import type { ActivePage } from "@offline-tldr/shared";
  * non-http(s) URL. The key changes with either the tab or its URL, so
  * switching tabs and navigating both read as "a different page", while
  * repeated triggers for the same page dedupe to one run. The fragment is
- * ignored: in-page jumps and scroll-position replaceState churn are not new
- * content.
+ * ignored (pageKey): in-page jumps and scroll-position replaceState churn
+ * are not new content.
  */
 export function autoRunKey(page: ActivePage | null): string | null {
   if (!page || !page.complete) {
     return null;
   }
-  let url: URL;
-  try {
-    url = new URL(page.url);
-  } catch {
-    return null;
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    return null;
-  }
-  url.hash = "";
-  return `${page.tabId}|${url.href}`;
+  const key = pageKey(page.url);
+  return key === null ? null : `${page.tabId}|${key}`;
 }
 
 export interface AutoRunDeps {
@@ -38,8 +34,12 @@ export interface AutoRunDeps {
   enabled(): boolean;
   /** The active page, or null when the extension cannot see one. */
   getPage(): Promise<ActivePage | null>;
-  /** Cancels the in-flight run, if any; true when one was actually canceled. */
-  cancel(): boolean;
+  /**
+   * Whether the background already holds state for this tab and page - a
+   * finished summary, a stored error, or a run still streaming. Such a page
+   * is settled: auto mode shows what exists instead of running again.
+   */
+  hasState(page: ActivePage): Promise<boolean>;
   /** Starts an auto run for this page. */
   start(page: ActivePage): void;
 }
@@ -49,9 +49,10 @@ export interface AutoRun {
   trigger(): void;
   /**
    * Records the page of a run started outside the controller (the manual
-   * button) once its lookup resolves. A result that arrives after the
-   * controller has moved on (canceled or started another run meanwhile) is
-   * stale and discarded.
+   * button) once its lookup resolves, so a spurious same-page trigger does
+   * not restart a run the user just started or stopped. A result that
+   * arrives after the controller has moved on (started another run
+   * meanwhile) is stale and discarded.
    */
   noteManualRun(lookup: Promise<ActivePage | null>): void;
 }
@@ -61,17 +62,15 @@ export interface AutoRun {
  * arrives mid-evaluation queues a re-evaluation instead of being dropped, so
  * a navigation during the page lookup is never missed.
  *
- * Policy per evaluation: when the active page differs from the last run's,
- * cancel whatever is still running (the panel must not keep working on a page
- * the user left); a canceled page forgets its key so returning to it re-runs.
- * Then start a run only for an eligible page - an ineligible destination (new
- * tab, browser-internal page) keeps the last finished summary on screen.
+ * Policy per evaluation: an ineligible page does nothing (the panel shows
+ * whatever the tab's state is); an eligible page already keyed or already
+ * settled in the background is skipped; anything else starts a run.
  */
 export function createAutoRun(deps: AutoRunDeps): AutoRun {
   let lastKey: string | null = null;
   let evaluating = false;
   let queued = false;
-  /** Bumped by every mutating evaluation; stale noteManualRun results compare against it. */
+  /** Bumped by every started run; stale noteManualRun results compare against it. */
   let generation = 0;
 
   async function evaluate(): Promise<void> {
@@ -85,16 +84,19 @@ export function createAutoRun(deps: AutoRunDeps): AutoRun {
       return;
     }
     const key = autoRunKey(page);
-    if (key === lastKey) {
+    if (!page || key === null || key === lastKey) {
+      return;
+    }
+    if (await deps.hasState(page)) {
+      // Settled elsewhere (revisited tab, resumed run); remember the key so
+      // repeated triggers for it stop asking.
+      lastKey = key;
+      return;
+    }
+    if (!deps.enabled()) {
       return;
     }
     generation += 1;
-    if (deps.cancel()) {
-      lastKey = null;
-    }
-    if (!page || !key) {
-      return;
-    }
     lastKey = key;
     deps.start(page);
   }
@@ -118,6 +120,7 @@ export function createAutoRun(deps: AutoRunDeps): AutoRun {
       })();
     },
     noteManualRun(lookup: Promise<ActivePage | null>): void {
+      generation += 1;
       const startedAt = generation;
       void lookup.then(
         (page) => {

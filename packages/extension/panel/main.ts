@@ -1,6 +1,9 @@
 // Panel entry point: summary view + settings view.
-// Talks to the background via one-shot messages (settings, engine probe) and
-// a long-lived port for the streamed summary.
+// The panel owns no summary state (issue #7): the background keeps one entry
+// per tab, and the panel is a view over the active tab's entry. On every
+// activation (open, tab switch, navigation) it watches that tab over the
+// summarize port, renders the snapshot it gets back, and applies the run
+// events that follow. Settings and probing stay one-shot messages.
 
 import { platform } from "@platform";
 import {
@@ -9,14 +12,18 @@ import {
   type EngineStatus,
   type GetActivePageResponse,
   type GetSettingsResponse,
+  type GetTabStateResponse,
   type ProbeEngineResponse,
   type Settings,
+  type SummarizeCommand,
   type SummarizeErrorCode,
   type SummarizeEvent,
-  type SummarizeStart,
+  type SummarizePortEvent,
+  type TabSummaryState,
 } from "@offline-tldr/shared";
 import { DEFAULT_ENDPOINTS, ENGINE_LABELS, isLocalEndpoint, normalizeSettings } from "../lib/settings";
 import { createAutoRun } from "./auto";
+import { applyRunEvent, createTabStream, emptyView, viewFromState, type RunView } from "./tab-stream";
 import { describeStatusShort, statusView } from "./status-view";
 import { renderMarkdown } from "./markdown";
 import type { PlatformPort } from "../platform/types";
@@ -45,20 +52,30 @@ const el = {
 
 let settings: Settings;
 let status: EngineStatus | null = null;
-let activePort: PlatformPort | null = null;
+
+// ---- The watched tab ----------------------------------------------------------------
+
+// Which port events apply and how they fold into the view is pure policy in
+// tab-stream.ts; this module only paints.
+let port: PlatformPort | null = null;
+const stream = createTabStream();
+/** Discards activations that resolve after a newer one began. */
+let activationSeq = 0;
+let view: RunView = emptyView();
 
 // Auto-summarize policy lives in auto.ts (pure, tested); this only wires its
-// effects to the panel: page lookups via the background, canceling the
-// in-flight run, and starting a new one pinned to the qualified tab.
+// effects to the panel: page and stored-state lookups via the background,
+// and starting a run pinned to the qualified tab.
 const autoRun = createAutoRun({
   enabled: () => settings.autoSummarize && status !== null && statusView(settings, status, platform.name).summarizeEnabled,
   getPage: async () => ((await platform.sendMessage({ type: "get-active-page" })) as GetActivePageResponse).page,
-  cancel: () => {
-    if (!activePort) {
-      return false;
-    }
-    finishSummarize();
-    return true;
+  hasState: async (page) => {
+    const response = (await platform.sendMessage({
+      type: "get-tab-state",
+      tabId: page.tabId,
+      url: page.url,
+    })) as GetTabStateResponse;
+    return response.state !== null;
   },
   start: (page) => startSummarize({ auto: true, tabId: page.tabId }),
 });
@@ -96,16 +113,76 @@ async function init(): Promise<void> {
   el.formatSelect.value = settings.format;
 
   wireEvents();
-  platform.onActiveTabChanged(() => autoRun.trigger());
+  platform.onActiveTabChanged(() => void activate());
   // SPA navigations come from the content script, not the tabs API.
   platform.onMessage((message) => {
     if ((message as { type?: string })?.type === "page-changed") {
-      autoRun.trigger();
+      void activate();
     }
     return undefined;
   });
+  // Show the active tab's state right away; the (slower) engine probe follows
+  // and unlocks auto mode.
+  await activate();
   await probeAndRender();
   autoRun.trigger();
+}
+
+/**
+ * Points the panel at the active tab: watch it over the port (the background
+ * answers with a state snapshot, then streams that tab's run events) and let
+ * auto mode evaluate the page. Tabs whose page the extension cannot see
+ * (browser-internal) are still watched by id so a stale summary never
+ * lingers on screen.
+ */
+async function activate(): Promise<void> {
+  const seq = ++activationSeq;
+  const { page } = (await platform.sendMessage({ type: "get-active-page" })) as GetActivePageResponse;
+  let tabId = page?.tabId;
+  if (tabId === undefined) {
+    tabId = (await platform.getActiveTab())?.id;
+  }
+  if (seq !== activationSeq) {
+    return;
+  }
+  if (tabId === undefined) {
+    stream.clear();
+    renderTabState(null);
+    return;
+  }
+  const command: SummarizeCommand = { type: "watch", tabId, watchId: stream.beginWatch(tabId) };
+  if (page) {
+    command.url = page.url;
+  }
+  ensurePort().postMessage(command);
+  autoRun.trigger();
+}
+
+function ensurePort(): PlatformPort {
+  if (port) {
+    return port;
+  }
+  const opened = platform.connect(SUMMARIZE_PORT);
+  port = opened;
+  opened.onMessage(handlePortEvent);
+  opened.onDisconnect(() => {
+    // The background restarted; reconnect and re-sync on the next activation.
+    if (port === opened) {
+      port = null;
+      void activate();
+    }
+  });
+  return opened;
+}
+
+function handlePortEvent(message: unknown): void {
+  const event = message as SummarizePortEvent;
+  const classified = stream.classify(event);
+  if (classified === "snapshot" && event.type === "tab-state") {
+    renderTabState(event.state);
+  } else if (classified === "run-event" && event.type === "tab-event") {
+    handleRunEvent(event.event);
+  }
 }
 
 function wireEvents(): void {
@@ -147,8 +224,8 @@ function wireEvents(): void {
   el.saveSettingsButton.addEventListener("click", () => void saveFromForm());
 
   el.summarizeButton.addEventListener("click", () => {
-    if (activePort) {
-      finishSummarize();
+    if (view.running) {
+      stopSummarize();
     } else {
       startSummarize();
     }
@@ -268,27 +345,27 @@ function renderStatus(): void {
   if (!status) {
     return;
   }
-  const view = statusView(settings, status, platform.name);
-  el.statusDot.dataset["state"] = view.dot;
-  el.statusText.textContent = view.label;
-  el.summarizeButton.disabled = !view.summarizeEnabled;
+  const header = statusView(settings, status, platform.name);
+  el.statusDot.dataset["state"] = header.dot;
+  el.statusText.textContent = header.label;
+  el.summarizeButton.disabled = !header.summarizeEnabled;
 
   const banner = el.statusBanner;
   banner.replaceChildren();
   delete banner.dataset["tone"];
-  if (!view.banner) {
+  if (!header.banner) {
     banner.hidden = true;
     return;
   }
 
   banner.hidden = false;
-  banner.dataset["tone"] = view.banner.tone;
+  banner.dataset["tone"] = header.banner.tone;
   const title = document.createElement("p");
   title.className = "banner-title";
-  title.textContent = view.banner.title;
+  title.textContent = header.banner.title;
   banner.append(title);
 
-  for (const block of view.banner.blocks) {
+  for (const block of header.banner.blocks) {
     if (block.kind === "p") {
       const p = document.createElement("p");
       p.textContent = block.text;
@@ -309,7 +386,7 @@ function renderStatus(): void {
     }
   }
 
-  if (view.banner.showRetry) {
+  if (header.banner.showRetry) {
     const actions = document.createElement("div");
     actions.className = "banner-actions";
     const retry = document.createElement("button");
@@ -321,10 +398,13 @@ function renderStatus(): void {
   }
 }
 
-
 // ---- Summarize ----------------------------------------------------------------------
 
 function startSummarize({ auto = false, tabId }: { auto?: boolean; tabId?: number } = {}): void {
+  const target = tabId ?? stream.watchedTabId();
+  if (target === null || target === undefined) {
+    return;
+  }
   // A manual run records the page key too, so auto mode does not immediately
   // re-summarize the page the user just summarized by hand.
   if (!auto) {
@@ -332,96 +412,97 @@ function startSummarize({ auto = false, tabId }: { auto?: boolean; tabId?: numbe
       platform.sendMessage({ type: "get-active-page" }).then((response) => (response as GetActivePageResponse).page),
     );
   }
-  let markdown = "";
-  el.summaryOutput.replaceChildren(emptyState(true));
-  setRunStatus("Reading page…");
-  el.summarizeButton.textContent = "Stop";
-
-  const port = platform.connect(SUMMARIZE_PORT);
-  activePort = port;
-
-  let title = "";
-  let truncated = false;
-
-  port.onMessage((message) => {
-    const event = message as SummarizeEvent;
-    switch (event.type) {
-      case "phase":
-        setRunStatus(event.phase === "extracting" ? "Reading page…" : "Summarizing…");
-        break;
-      case "article":
-        title = event.title;
-        truncated = event.truncated;
-        renderSummary();
-        break;
-      case "chunk":
-        markdown += event.text;
-        renderSummary();
-        break;
-      case "done":
-        renderCopyAction();
-        finishSummarize();
-        break;
-      case "error":
-        renderRunError(event.code, event.message, auto);
-        finishSummarize();
-        break;
-    }
-  });
-  port.onDisconnect(() => {
-    if (activePort === port) {
-      finishSummarize();
-    }
-  });
-  const start: SummarizeStart = { type: "start" };
-  if (tabId !== undefined) {
-    start.tabId = tabId;
+  // Auto runs pin the tab they qualified; show the working state only when it
+  // is still the tab on screen (the events are filtered the same way).
+  if (target === stream.watchedTabId()) {
+    view = { ...emptyView(), running: true, auto };
+    el.summaryOutput.replaceChildren(emptyState(true));
+    setRunStatus("Reading page…");
+    el.summarizeButton.textContent = "Stop";
   }
-  port.postMessage(start);
+  const command: SummarizeCommand = { type: "start", tabId: target, auto };
+  ensurePort().postMessage(command);
+}
 
-  function renderSummary(): void {
-    el.summaryOutput.replaceChildren();
-    if (title) {
-      const heading = document.createElement("h2");
-      heading.className = "summary-title";
-      heading.textContent = title;
-      el.summaryOutput.append(heading);
-    }
-    if (truncated) {
-      const note = document.createElement("p");
-      note.className = "truncated-note";
-      note.textContent = "Long page: the summary covers the beginning of the article.";
-      el.summaryOutput.append(note);
-    }
-    el.summaryOutput.append(renderMarkdown(markdown, document));
+/**
+ * Runs are stopped explicitly, not by disconnecting: the port outlives runs
+ * and closing the panel deliberately leaves the run going. Whatever streamed
+ * so far stays on screen; the background forgets the unfinished entry.
+ */
+function stopSummarize(): void {
+  const tabId = stream.watchedTabId();
+  if (tabId !== null) {
+    const command: SummarizeCommand = { type: "cancel", tabId };
+    ensurePort().postMessage(command);
   }
+  view = { ...view, running: false };
+  finishRunUi();
+}
 
-  function renderCopyAction(): void {
-    if (markdown.trim().length === 0) {
-      return;
-    }
-    const actions = document.createElement("div");
-    actions.className = "summary-actions";
-    const copy = document.createElement("button");
-    copy.type = "button";
-    copy.textContent = "Copy summary";
-    copy.addEventListener("click", () => {
-      void navigator.clipboard.writeText(markdown.trim()).then(() => {
-        copy.textContent = "Copied";
-        setTimeout(() => {
-          copy.textContent = "Copy summary";
-        }, 1500);
-      });
-    });
-    actions.append(copy);
-    el.summaryOutput.append(actions);
+/** Renders one tab's stored state, the panel's whole world after a switch. */
+function renderTabState(state: TabSummaryState | null): void {
+  view = viewFromState(state);
+  if (!state) {
+    el.summaryOutput.replaceChildren(emptyState(false));
+    finishRunUi();
+    return;
+  }
+  switch (state.status.kind) {
+    case "running":
+      if (view.title || view.markdown) {
+        renderSummary();
+      } else {
+        el.summaryOutput.replaceChildren(emptyState(true));
+      }
+      setRunStatus(state.status.phase === "extracting" ? "Reading page…" : "Summarizing…");
+      el.summarizeButton.textContent = "Stop";
+      break;
+    case "done":
+      renderSummary();
+      renderCopyAction();
+      finishRunUi();
+      break;
+    case "error":
+      if (view.title || view.markdown) {
+        renderSummary();
+      } else {
+        el.summaryOutput.replaceChildren(emptyState(false));
+      }
+      renderRunError(state.status.code, state.status.message, state.auto);
+      finishRunUi();
+      break;
   }
 }
 
-function finishSummarize(): void {
-  // Disconnecting aborts the background run when it is still in flight.
-  activePort?.disconnect();
-  activePort = null;
+function handleRunEvent(event: SummarizeEvent): void {
+  view = applyRunEvent(view, event);
+  switch (event.type) {
+    case "phase":
+      // "extracting" opens a run (ours, or one another surface started for
+      // this tab): the fold reset the accumulation; show the working glyph.
+      if (event.phase === "extracting") {
+        el.summaryOutput.replaceChildren(emptyState(true));
+      }
+      el.summarizeButton.textContent = "Stop";
+      setRunStatus(event.phase === "extracting" ? "Reading page…" : "Summarizing…");
+      break;
+    case "article":
+    case "chunk":
+      renderSummary();
+      break;
+    case "done":
+      renderSummary();
+      renderCopyAction();
+      finishRunUi();
+      break;
+    case "error":
+      renderRunError(event.code, event.message, view.auto);
+      finishRunUi();
+      break;
+  }
+}
+
+function finishRunUi(): void {
   setRunStatus("");
   el.summarizeButton.textContent = "Summarize this page";
   // A run that produced no output (stopped early) leaves the working glyph
@@ -430,6 +511,45 @@ function finishSummarize(): void {
   if (el.summaryOutput.querySelector(".summary-empty.working")) {
     el.summaryOutput.replaceChildren(emptyState(false));
   }
+}
+
+function renderSummary(): void {
+  el.summaryOutput.replaceChildren();
+  if (view.title) {
+    const heading = document.createElement("h2");
+    heading.className = "summary-title";
+    heading.textContent = view.title;
+    el.summaryOutput.append(heading);
+  }
+  if (view.truncated) {
+    const note = document.createElement("p");
+    note.className = "truncated-note";
+    note.textContent = "Long page: the summary covers the beginning of the article.";
+    el.summaryOutput.append(note);
+  }
+  el.summaryOutput.append(renderMarkdown(view.markdown, document));
+}
+
+function renderCopyAction(): void {
+  const markdown = view.markdown.trim();
+  if (markdown.length === 0) {
+    return;
+  }
+  const actions = document.createElement("div");
+  actions.className = "summary-actions";
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.textContent = "Copy summary";
+  copy.addEventListener("click", () => {
+    void navigator.clipboard.writeText(markdown).then(() => {
+      copy.textContent = "Copied";
+      setTimeout(() => {
+        copy.textContent = "Copy summary";
+      }, 1500);
+    });
+  });
+  actions.append(copy);
+  el.summaryOutput.append(actions);
 }
 
 function setRunStatus(text: string): void {

@@ -24,7 +24,8 @@ Everything here runs on hardware you control:
 - **Offline ready.** Fully operational without an internet connection once a model is pulled.
 - **Distraction-free extraction.** DOM clutter (sidebars, ads, navigation) is stripped before text reaches the model.
 - **Your format.** Bullet points, a structured executive summary (bold takeaway, then short paragraphs), or a TL;DR one-liner, with a configurable length cap - plus a small comparison table when the article calls for one.
-- **Auto mode.** An optional switch summarizes each page as you browse while the panel is open, canceling stale runs as you move between tabs.
+- **Auto mode.** An optional switch summarizes each page as you browse while the panel is open.
+- **Per-tab memory.** Each tab keeps its own summary; switching tabs restores what was summarized there, and a run keeps going if you close the panel.
 
 ## How it works
 
