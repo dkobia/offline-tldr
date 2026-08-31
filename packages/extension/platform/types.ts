@@ -35,6 +35,14 @@ export interface Platform {
   getSetting<T>(key: string, fallback: T): Promise<T>;
   setSetting<T>(key: string, value: T): Promise<void>;
 
+  /**
+   * Session-scoped storage (storage.session): survives background restarts
+   * within a browser session, cleared when the browser exits. Holds the
+   * per-tab summary store, which must not outlive the tabs it describes.
+   */
+  getSessionValue<T>(key: string, fallback: T): Promise<T>;
+  setSessionValue<T>(key: string, value: T): Promise<void>;
+
   /** Sends a one-shot message to the background and awaits the response. */
   sendMessage(message: unknown): Promise<unknown>;
   /** Sends a one-shot message to the content script of a tab. Rejects when the tab has no listener. */
@@ -54,6 +62,9 @@ export interface Platform {
    * re-query getActiveTab and decide; the events carry no payload.
    */
   onActiveTabChanged(listener: () => void): void;
+
+  /** Notifies when a tab is closed; the background drops that tab's summary state. */
+  onTabRemoved(listener: (tabId: number) => void): void;
 
   /**
    * Injects the content script into a tab. Needed for tabs that were already

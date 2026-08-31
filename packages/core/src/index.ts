@@ -34,3 +34,4 @@ export interface SummarizationEngine {
 export { extractArticle } from "./extract";
 export { fitToBudget, DEFAULT_INPUT_CHAR_BUDGET, type FittedText } from "./chunk";
 export { buildPrompt, type PromptParts } from "./prompt";
+export { pageKey } from "./page-key";

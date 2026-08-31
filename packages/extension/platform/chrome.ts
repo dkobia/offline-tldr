@@ -22,6 +22,15 @@ export const platform: Platform = {
     await chrome.storage.local.set({ [key]: value });
   },
 
+  async getSessionValue<T>(key: string, fallback: T): Promise<T> {
+    const stored = await chrome.storage.session.get(key);
+    return (stored[key] as T | undefined) ?? fallback;
+  },
+
+  async setSessionValue<T>(key: string, value: T): Promise<void> {
+    await chrome.storage.session.set({ [key]: value });
+  },
+
   sendMessage(message: unknown): Promise<unknown> {
     return chrome.runtime.sendMessage(message);
   },
@@ -71,6 +80,10 @@ export const platform: Platform = {
         listener();
       }
     });
+  },
+
+  onTabRemoved(listener: (tabId: number) => void): void {
+    chrome.tabs.onRemoved.addListener((tabId) => listener(tabId));
   },
 
   async injectContentScript(tabId: number): Promise<void> {

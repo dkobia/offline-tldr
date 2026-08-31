@@ -35,7 +35,8 @@ export type BackgroundRequest =
   | { type: "get-settings" }
   | { type: "save-settings"; settings: Settings }
   | { type: "probe-engine"; settings: Settings }
-  | { type: "get-active-page" };
+  | { type: "get-active-page" }
+  | { type: "get-tab-state"; tabId: number; url: string };
 
 export interface GetSettingsResponse {
   settings: Settings;
@@ -92,19 +93,54 @@ export interface PageChangedNotice {
   type: "page-changed";
 }
 
+// ---- Per-tab summary state ----------------------------------------------------------
+
+/**
+ * Everything the background remembers about one tab's summary, the panel's
+ * source of truth when it activates a tab. Shaped so a chat context can be
+ * added later without reworking the keying.
+ */
+export interface TabSummaryState {
+  /** URL the run was started for; a tab showing a different page invalidates the entry. */
+  url: string;
+  status:
+    | { kind: "running"; phase: "extracting" | "summarizing" }
+    | { kind: "done" }
+    | { kind: "error"; code: SummarizeErrorCode; message: string };
+  title: string;
+  truncated: boolean;
+  /** Summary markdown accumulated so far (complete once status is done). */
+  markdown: string;
+  /** Whether an auto run produced it; auto runs render expected errors quietly. */
+  auto: boolean;
+}
+
+export interface GetTabStateResponse {
+  state: TabSummaryState | null;
+}
+
 // ---- Summarize stream (panel <-> background over a long-lived port) -----------------
 
 export const SUMMARIZE_PORT = "summarize";
 
-export interface SummarizeStart {
-  type: "start";
-  /**
-   * The tab to summarize. Auto runs pin the tab they qualified so a tab
-   * switch between qualification and extraction cannot summarize the wrong
-   * page; when absent (the manual button) the background uses the active tab.
-   */
-  tabId?: number;
-}
+/**
+ * Commands the panel sends over the port. `watch` subscribes the port to one
+ * tab's run events and answers with a `tab-state` snapshot; the panel's
+ * `watchId` is echoed back so a snapshot from a superseded watch is
+ * discardable. `url` is the page the panel believes the tab shows; when the
+ * panel cannot see one (browser-internal pages) the background asks the tab
+ * itself. Runs are keyed to tabs, not ports: disconnecting only unsubscribes,
+ * and `cancel` is how a run is actually stopped.
+ */
+export type SummarizeCommand =
+  | { type: "watch"; tabId: number; url?: string; watchId: number }
+  | { type: "start"; tabId: number; auto: boolean }
+  | { type: "cancel"; tabId: number };
+
+/** Events the background posts to a port: the snapshot answering a watch, then per-tab run deltas. */
+export type SummarizePortEvent =
+  | { type: "tab-state"; watchId: number; tabId: number; state: TabSummaryState | null }
+  | { type: "tab-event"; tabId: number; event: SummarizeEvent };
 
 export type SummarizeErrorCode =
   | "page-unsupported"
@@ -116,7 +152,9 @@ export type SummarizeErrorCode =
   | "engine-error";
 
 export type SummarizeEvent =
-  | { type: "phase"; phase: "extracting" | "summarizing" }
+  /** "extracting" opens a run; it carries the run's mode so a watcher synced to an older snapshot adopts it. */
+  | { type: "phase"; phase: "extracting"; auto: boolean }
+  | { type: "phase"; phase: "summarizing" }
   | { type: "article"; title: string; truncated: boolean }
   | { type: "chunk"; text: string }
   | { type: "done" }

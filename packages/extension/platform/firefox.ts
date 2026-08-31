@@ -22,6 +22,15 @@ export const platform: Platform = {
     await browser.storage.local.set({ [key]: value });
   },
 
+  async getSessionValue<T>(key: string, fallback: T): Promise<T> {
+    const stored = await browser.storage.session.get(key);
+    return (stored[key] as T | undefined) ?? fallback;
+  },
+
+  async setSessionValue<T>(key: string, value: T): Promise<void> {
+    await browser.storage.session.set({ [key]: value });
+  },
+
   sendMessage(message: unknown): Promise<unknown> {
     return browser.runtime.sendMessage(message);
   },
@@ -63,6 +72,10 @@ export const platform: Platform = {
         listener();
       }
     });
+  },
+
+  onTabRemoved(listener: (tabId: number) => void): void {
+    browser.tabs.onRemoved.addListener((tabId) => listener(tabId));
   },
 
   async injectContentScript(tabId: number): Promise<void> {
