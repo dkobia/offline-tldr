@@ -8,7 +8,7 @@
     "@offline-tldr/shared": "workspace:*"
   },
   "devDependencies": {
-    "@types/chrome": "^0.0.280",
+    "@types/chrome": "^0.2.7",
     "@types/firefox-webext-browser": "^120.0.4"
   }
 }
