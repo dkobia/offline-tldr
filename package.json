@@ -11,6 +11,7 @@
     "build": "node scripts/build.mjs chrome && node scripts/build.mjs firefox",
     "build:chrome": "node scripts/build.mjs chrome",
     "build:firefox": "node scripts/build.mjs firefox",
+    "pack:chrome": "node scripts/pack.mjs chrome",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --build",
