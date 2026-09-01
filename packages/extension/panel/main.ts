@@ -96,7 +96,6 @@ function emptyState(working: boolean): HTMLElement {
   return node;
 }
 
-document.documentElement.classList.add(`platform-${platform.name}`);
 void init();
 
 async function init(): Promise<void> {

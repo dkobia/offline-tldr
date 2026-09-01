@@ -38,7 +38,14 @@ await build({
   },
 });
 
-await cp(path.join(ext, "panel", "index.html"), path.join(outdir, "panel.html"));
+// Stamp the platform class at build time so per-target CSS (e.g. the Firefox
+// popup's fixed size) applies at parse time, before Firefox's one-shot popup
+// measurement - a deferred module script adds the class too late.
+const panelHtml = await readFile(path.join(ext, "panel", "index.html"), "utf8");
+await writeFile(
+  path.join(outdir, "panel.html"),
+  panelHtml.replace('<html lang="en">', `<html lang="en" class="platform-${target}">`),
+);
 await cp(path.join(ext, "panel", "panel.css"), path.join(outdir, "panel.css"));
 await cp(path.join(ext, "panel", "fonts"), path.join(outdir, "fonts"), { recursive: true });
 await cp(path.join(root, "images", "icons"), path.join(outdir, "icons"), { recursive: true });
