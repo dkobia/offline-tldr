@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Offline TL;DR",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Summarize web pages entirely on your device via local models (Ollama, LM Studio, llama.cpp). No cloud, no telemetry.",
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": [
