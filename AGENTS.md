@@ -39,8 +39,9 @@ Load `dist/chrome` via chrome://extensions (Load unpacked) and `dist/firefox` vi
 
 ## Releasing
 
-- Bump `version` in `manifests/base.json` and the three `packages/*/package.json` files, commit, then push a matching tag (`v0.2.0`).
-  The Publish workflow (`.github/workflows/publish.yml`) runs typecheck, tests, and the build first and checks the tag against the manifest; only when that verify job passes does it pack `dist/chrome` and publish it to the Chrome Web Store with `wdzeng/chrome-extension`.
+- Bump `version` in `manifests/base.json` and the three `packages/*/package.json` files in its own small PR, merge it, then create a GitHub Release on that commit with a matching tag (`v0.2.0`) and release notes.
+  The Publish workflow (`.github/workflows/publish.yml`) runs typecheck, tests, and the build first and checks the release tag against the manifest; only when that verify job passes does it pack `dist/chrome` and publish it to the Chrome Web Store with `wdzeng/chrome-extension`.
+  Feature PRs do not bump the version; merging to `main` never publishes.
 - Running the workflow by hand defaults to upload-only, which stages a draft in the developer dashboard without publishing.
 - Store credentials live only as GitHub Actions secrets (`PUBLISHER_ID`, `CHROME_CLIENT_ID`, `CHROME_CLIENT_SECRET`, `CHROME_REFRESH_TOKEN`); never commit them.
 - Firefox is not yet listed; `pnpm build:firefox` produces the loadable `dist/firefox`.

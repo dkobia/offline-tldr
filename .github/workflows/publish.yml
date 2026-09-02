@@ -1,13 +1,14 @@
 name: Publish
 
-# Pushing a version tag (v0.2.0) publishes that build to the Chrome Web Store.
-# The manual trigger defaults to upload-only, which stages a draft in the
-# developer dashboard without publishing it. Publishing is gated on the verify
-# job: nothing reaches the store unless typecheck, tests, and the build pass.
+# Publishing a GitHub Release (tag v0.2.0, notes attached) publishes that
+# build to the Chrome Web Store. The manual trigger defaults to upload-only,
+# which stages a draft in the developer dashboard without publishing it.
+# Publishing is gated on the verify job: nothing reaches the store unless
+# typecheck, tests, and the build pass.
 
 on:
-  push:
-    tags: ["v*"]
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       action:
@@ -40,8 +41,8 @@ jobs:
 
       - run: pnpm build
 
-      - name: Check the tag matches the manifest version
-        if: github.ref_type == 'tag'
+      - name: Check the release tag matches the manifest version
+        if: github.event_name == 'release'
         run: |
           version=$(node -p "require('./manifests/base.json').version")
           if [ "v$version" != "$GITHUB_REF_NAME" ]; then
@@ -74,4 +75,4 @@ jobs:
           client-id: ${{ secrets.CHROME_CLIENT_ID }}
           client-secret: ${{ secrets.CHROME_CLIENT_SECRET }}
           refresh-token: ${{ secrets.CHROME_REFRESH_TOKEN }}
-          action: ${{ github.event_name == 'push' && 'publish' || inputs.action }}
+          action: ${{ github.event_name == 'release' && 'publish' || inputs.action }}
