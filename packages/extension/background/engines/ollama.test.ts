@@ -79,6 +79,18 @@ describe("OllamaEngine.summarize", () => {
     expect(await collect(engine.summarize(request))).toBe("Hello");
   });
 
+  it("requests the planned output cap when the budget carries one", async () => {
+    const engine = new OllamaEngine(
+      "http://localhost:11434",
+      "m",
+      fetchStub((_url, init) => {
+        expect(JSON.parse(String(init?.body)).options.num_predict).toBe(1500);
+        return streamResponse(['{"message":{"content":"ok"},"done":true}\n']);
+      }),
+    );
+    expect(await collect(engine.summarize({ ...request, maxOutputTokens: 1500 }))).toBe("ok");
+  });
+
   it("throws model-missing on 404", async () => {
     const engine = new OllamaEngine(
       "http://localhost:11434",
@@ -105,5 +117,65 @@ describe("OllamaEngine.summarize", () => {
     const failure = await collect(engine.summarize(request)).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(EngineError);
     expect((failure as EngineError).message).toBe("out of memory");
+  });
+});
+
+describe("OllamaEngine.contextLength", () => {
+  it("reads the loaded context from /api/ps, matching an untagged name to :latest", async () => {
+    const urls: string[] = [];
+    const engine = new OllamaEngine(
+      "http://localhost:11434",
+      "llama3.2",
+      fetchStub((url) => {
+        urls.push(url);
+        return jsonResponse(200, { models: [{ name: "llama3.2:latest", context_length: 32768 }] });
+      }),
+    );
+    expect(await engine.contextLength()).toBe(32768);
+    expect(urls).toEqual(["http://localhost:11434/api/ps"]);
+  });
+
+  it("loads an unloaded model with the empty-messages chat call, then reads /api/ps again", async () => {
+    const calls: { url: string; body?: unknown }[] = [];
+    let loaded = false;
+    const engine = new OllamaEngine(
+      "http://localhost:11434",
+      "gemma4:26b",
+      fetchStub((url, init) => {
+        calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+        if (url.endsWith("/api/chat")) {
+          loaded = true;
+          return jsonResponse(200, { done: true, done_reason: "load" });
+        }
+        return jsonResponse(200, { models: loaded ? [{ name: "gemma4:26b", context_length: 262144 }] : [] });
+      }),
+    );
+    expect(await engine.contextLength()).toBe(262144);
+    expect(calls.map((call) => call.url)).toEqual([
+      "http://localhost:11434/api/ps",
+      "http://localhost:11434/api/chat",
+      "http://localhost:11434/api/ps",
+    ]);
+    expect(calls[1]?.body).toEqual({ model: "gemma4:26b", messages: [] });
+  });
+
+  it("returns null when the loaded entry has no context_length (older Ollama)", async () => {
+    const engine = new OllamaEngine(
+      "http://localhost:11434",
+      "m",
+      fetchStub(() => jsonResponse(200, { models: [{ name: "m:latest" }] })),
+    );
+    expect(await engine.contextLength()).toBeNull();
+  });
+
+  it("returns null when the load call fails or the server is unreachable", async () => {
+    const missing = new OllamaEngine(
+      "http://localhost:11434",
+      "nope",
+      fetchStub((url) => (url.endsWith("/api/chat") ? jsonResponse(404, { error: "not found" }) : jsonResponse(200, { models: [] }))),
+    );
+    expect(await missing.contextLength()).toBeNull();
+    const failing = (() => Promise.reject(new TypeError("Failed to fetch"))) as unknown as FetchFn;
+    expect(await new OllamaEngine("http://localhost:11434", "m", failing).contextLength()).toBeNull();
   });
 });
