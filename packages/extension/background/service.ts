@@ -11,7 +11,7 @@
 // summaries; handlers that touch it await the restore first.
 
 import type { Platform, PlatformPort } from "../platform/types";
-import { DEFAULT_INPUT_CHAR_BUDGET, fitToBudget, pageKey } from "@offline-tldr/core";
+import { fitToBudget, pageKey, planBudget } from "@offline-tldr/core";
 import {
   SUMMARIZE_PORT,
   type BackgroundRequest,
@@ -344,21 +344,35 @@ export function startBackground({ platform, createEngine }: BackgroundDeps): voi
       }
 
       const article = extracted.article;
-      const fitted = fitToBudget(article.text, DEFAULT_INPUT_CHAR_BUDGET);
+      const engine = createEngine(settings);
+      // Summarizing starts before the budget is known: asking the runtime for
+      // its context can load the model, which belongs to this phase.
       write((entry) => {
         entry.title = article.title;
-        entry.truncated = fitted.truncated;
         entry.status = { kind: "running", phase: "summarizing" };
       });
-      post({ type: "article", title: article.title, truncated: fitted.truncated });
       post({ type: "phase", phase: "summarizing" });
 
-      const engine = createEngine(settings);
+      // The article is fitted to what the loaded model can actually take,
+      // with the generation cap planned alongside it so the two never overlap;
+      // runtimes that report nothing get the fixed defaults.
+      const contextTokens = await engine.contextLength(signal);
+      if (signal.aborted) {
+        return;
+      }
+      const budget = planBudget({ contextTokens, maxWords: settings.maxWords });
+      const fitted = fitToBudget(article.text, budget.inputChars);
+      write((entry) => {
+        entry.truncated = fitted.truncated;
+      });
+      post({ type: "article", title: article.title, truncated: fitted.truncated });
+
       const stream = engine.summarize(
         {
           article: { ...article, text: fitted.text },
           format: settings.format,
           maxWords: settings.maxWords,
+          maxOutputTokens: budget.outputTokens,
         },
         signal,
       );

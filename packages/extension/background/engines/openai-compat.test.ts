@@ -95,6 +95,19 @@ describe("OpenAiCompatEngine.summarize", () => {
     expect(await collect(engine.summarize(request))).toBe("Summary");
   });
 
+  it("requests the planned output cap when the budget carries one", async () => {
+    const engine = new OpenAiCompatEngine(
+      "lmstudio",
+      "http://localhost:1234",
+      "phi3",
+      fetchStub((_url, init) => {
+        expect(JSON.parse(String(init?.body)).max_tokens).toBe(1500);
+        return new Response("data: [DONE]\n\n", { status: 200 });
+      }),
+    );
+    expect(await collect(engine.summarize({ ...request, maxOutputTokens: 1500 }))).toBe("");
+  });
+
   it("omits reasoning_effort for servers other than LM Studio", async () => {
     const engine = new OpenAiCompatEngine(
       "llamacpp",
@@ -120,5 +133,56 @@ describe("OpenAiCompatEngine.summarize", () => {
       code: "engine-error",
       message: "no model loaded",
     });
+  });
+});
+
+describe("OpenAiCompatEngine.contextLength", () => {
+  const models = {
+    data: [
+      { id: "google/gemma-4-12b", state: "loaded", max_context_length: 262144, loaded_context_length: 32768 },
+      { id: "openai/gpt-oss-20b", state: "not-loaded", max_context_length: 131072 },
+    ],
+  };
+
+  it("reads LM Studio's loaded context from /api/v0/models", async () => {
+    const engine = new OpenAiCompatEngine(
+      "lmstudio",
+      "http://localhost:1234/v1",
+      "google/gemma-4-12b",
+      fetchStub((url) => {
+        expect(url).toBe("http://localhost:1234/api/v0/models");
+        return new Response(JSON.stringify(models), { status: 200 });
+      }),
+    );
+    expect(await engine.contextLength()).toBe(32768);
+  });
+
+  it("returns null for a model LM Studio has not loaded (its JIT context is unknown)", async () => {
+    const engine = new OpenAiCompatEngine(
+      "lmstudio",
+      "http://localhost:1234",
+      "openai/gpt-oss-20b",
+      fetchStub(() => new Response(JSON.stringify(models), { status: 200 })),
+    );
+    expect(await engine.contextLength()).toBeNull();
+  });
+
+  it("returns null when the REST endpoint is missing or unreachable", async () => {
+    const notFound = new OpenAiCompatEngine("lmstudio", "http://localhost:1234", "m", fetchStub(() => new Response("", { status: 404 })));
+    expect(await notFound.contextLength()).toBeNull();
+    const failing = (() => Promise.reject(new TypeError("Failed to fetch"))) as unknown as FetchFn;
+    expect(await new OpenAiCompatEngine("lmstudio", "http://localhost:1234", "m", failing).contextLength()).toBeNull();
+  });
+
+  it("returns null without a request for servers other than LM Studio", async () => {
+    const engine = new OpenAiCompatEngine(
+      "llamacpp",
+      "http://localhost:8080",
+      "m",
+      fetchStub(() => {
+        throw new Error("should not be called");
+      }),
+    );
+    expect(await engine.contextLength()).toBeNull();
   });
 });

@@ -23,6 +23,7 @@ Everything here runs on hardware you control:
 - **Local backends you already run.** Point the extension at Ollama (`localhost:11434`), LM Studio (`localhost:1234`), a llama.cpp server, or any compatible localhost endpoint.
 - **Offline ready.** Fully operational without an internet connection once a model is pulled.
 - **Distraction-free extraction.** DOM clutter (sidebars, ads, navigation) is stripped before text reaches the model.
+- **Fits your model.** The article budget follows the context length the runtime has loaded (Ollama and LM Studio report it), up to about 160k characters per run; runtimes that do not report one get a conservative default.
 - **Your format.** Bullet points, a structured executive summary (bold takeaway, then short paragraphs), or a TL;DR one-liner, with a configurable length cap - plus a small comparison table when the article calls for one.
 - **Auto mode.** An optional switch summarizes each page as you browse while the panel is open.
 - **Per-tab memory.** Each tab keeps its own summary; switching tabs restores what was summarized there, and a run keeps going if you close the panel.
@@ -56,6 +57,13 @@ Nothing in any code path sends page content, prompts, or metadata to a remote ho
 | **llama.cpp** | `llama-server` on a localhost port | any GGUF chat model |
 
 Browser built-in AI (Chrome's on-device model) and pure in-browser Wasm inference (Transformers.js) are candidates for later backends; the localhost runtimes come first.
+
+## Install
+
+- Chrome / Edge: [Offline TL;DR on the Chrome Web Store](https://chromewebstore.google.com/detail/offline-tldr/cgibooiickogggdkhpbmflgookgjpbnl).
+- Firefox: not yet listed - build and load it from source below.
+
+Then start a local runtime (see Quick start, step 3) and pick your engine and model in the panel's settings.
 
 ## Quick start (developer mode)
 

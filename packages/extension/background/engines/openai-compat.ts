@@ -1,13 +1,18 @@
 // Client for OpenAI-compatible local servers: LM Studio, llama.cpp server,
 // and anything else speaking /v1/models + /v1/chat/completions with SSE.
+// LM Studio additionally reports each model's loaded context at /api/v0/models.
 
-import { buildPrompt, type SummaryRequest } from "@offline-tldr/core";
+import { buildPrompt, outputTokenCap, type SummaryRequest } from "@offline-tldr/core";
 import type { EngineStatus } from "@offline-tldr/shared";
 import { sseData, textChunks } from "./stream";
 import { EngineError, type EngineClient, type FetchFn } from "./types";
 
 interface ModelsResponse {
   data?: { id?: string }[];
+}
+
+interface LmStudioModelsResponse {
+  data?: { id?: string; state?: string; loaded_context_length?: number }[];
 }
 
 interface ChatCompletionChunk {
@@ -51,6 +56,32 @@ export class OpenAiCompatEngine implements EngineClient {
     return { state: "ok", models };
   }
 
+  /**
+   * Only LM Studio exposes the loaded context (its REST API, alongside the
+   * OpenAI-compatible one). A model it would JIT-load on request has no known
+   * context yet, so that case takes the fallback budget too.
+   */
+  async contextLength(signal?: AbortSignal): Promise<number | null> {
+    if (this.name !== "lmstudio") {
+      return null;
+    }
+    try {
+      const response = await this.fetchFn(`${this.base}/api/v0/models`, signal ? { signal } : {});
+      if (!response.ok) {
+        return null;
+      }
+      const body = (await response.json()) as LmStudioModelsResponse;
+      const entry = (body.data ?? []).find((model) => model.id === this.model);
+      if (!entry || entry.state !== "loaded") {
+        return null;
+      }
+      const length = entry.loaded_context_length;
+      return typeof length === "number" && length > 0 ? length : null;
+    } catch {
+      return null;
+    }
+  }
+
   async *summarize(request: SummaryRequest, signal?: AbortSignal): AsyncIterable<string> {
     const prompt = buildPrompt(request);
     const init: RequestInit = {
@@ -65,12 +96,12 @@ export class OpenAiCompatEngine implements EngineClient {
         // and ignores it for non-thinking ones. Only sent to LM Studio:
         // other OpenAI-compatible servers may reject values they don't know.
         ...(this.name === "lmstudio" ? { reasoning_effort: "none" } : {}),
-        // Caps runaway generations. The flat headroom is for thinking models,
-        // whose reasoning tokens count against the limit and stream separately
-        // (reasoning_content), never reaching the panel: a big model can spend
-        // well over a thousand tokens reasoning about a full article before
-        // writing a single word of the summary.
-        max_tokens: request.maxWords * 4 + 4096,
+        // Caps runaway generations. The flat headroom inside the cap is for
+        // thinking models, whose reasoning tokens count against the limit and
+        // stream separately (reasoning_content), never reaching the panel: a
+        // big model can spend well over a thousand tokens reasoning about a
+        // full article before writing a single word of the summary.
+        max_tokens: request.maxOutputTokens ?? outputTokenCap(request.maxWords),
         messages: [
           { role: "system", content: prompt.system },
           { role: "user", content: prompt.user },

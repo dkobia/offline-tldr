@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SummaryRequest } from "@offline-tldr/core";
+import { outputTokenCap, type SummaryRequest } from "@offline-tldr/core";
 import type {
   EngineStatus,
   Settings,
@@ -176,6 +176,8 @@ class FakeEngine implements EngineClient {
   readonly name = "fake";
   requests: SummaryRequest[] = [];
   signals: (AbortSignal | undefined)[] = [];
+  /** What contextLength() reports; null mimics a runtime that cannot say. */
+  contextTokens: number | null = null;
 
   constructor(
     private readonly chunks: string[] = [],
@@ -191,6 +193,10 @@ class FakeEngine implements EngineClient {
 
   async probe(): Promise<EngineStatus> {
     return this.probeStatus;
+  }
+
+  async contextLength(): Promise<number | null> {
+    return this.contextTokens;
   }
 
   async *summarize(request: SummaryRequest, signal?: AbortSignal): AsyncIterable<string> {
@@ -320,6 +326,51 @@ describe("get-active-page", () => {
   });
 });
 
+describe("input budget", () => {
+  const LONG_ARTICLE = { ok: true, article: { title: "T", text: "x".repeat(30_000) } };
+
+  it("fits the article to the fixed default when the runtime reports no context", async () => {
+    const platform = new FakePlatform({ tabResponses: [URL_RESPONSE, LONG_ARTICLE] });
+    const engine = new FakeEngine(["ok"]);
+    start(platform, engine);
+    const port = await summarizeAndWait(platform);
+    expect(port.runEvents()).toContainEqual({ type: "article", title: "T", truncated: true });
+    expect(engine.requests[0]?.article.text).toHaveLength(20_000);
+    expect(platform.persistedStates()["1"]?.truncated).toBe(true);
+  });
+
+  it("sends the whole article when the loaded model's context has room for it", async () => {
+    const platform = new FakePlatform({ tabResponses: [URL_RESPONSE, LONG_ARTICLE] });
+    const engine = new FakeEngine(["ok"]);
+    engine.contextTokens = 32_768;
+    start(platform, engine);
+    const port = await summarizeAndWait(platform);
+    expect(port.runEvents()).toContainEqual({ type: "article", title: "T", truncated: false });
+    expect(engine.requests[0]?.article.text).toHaveLength(30_000);
+  });
+
+  it("shrinks both the article and the output cap for a small loaded context", async () => {
+    const platform = new FakePlatform({ tabResponses: [URL_RESPONSE, LONG_ARTICLE] });
+    const engine = new FakeEngine(["ok"]);
+    engine.contextTokens = 4096;
+    start(platform, engine);
+    await summarizeAndWait(platform);
+    const request = engine.requests[0]!;
+    expect(request.article.text.length).toBeLessThan(20_000);
+    expect(request.maxOutputTokens).toBeLessThan(outputTokenCap(DEFAULT_SETTINGS.maxWords));
+    expect(Math.ceil(request.article.text.length / 4) + request.maxOutputTokens!).toBeLessThan(4096);
+  });
+
+  it("requests the full output cap when the context has room", async () => {
+    const platform = new FakePlatform({ tabResponses: [URL_RESPONSE, ARTICLE] });
+    const engine = new FakeEngine(["ok"]);
+    engine.contextTokens = 32_768;
+    start(platform, engine);
+    await summarizeAndWait(platform);
+    expect(engine.requests[0]?.maxOutputTokens).toBe(outputTokenCap(DEFAULT_SETTINGS.maxWords));
+  });
+});
+
 describe("summarize runs", () => {
   it("streams phases, article, chunks, and done in order", async () => {
     const platform = new FakePlatform({ tabResponses: [URL_RESPONSE, ARTICLE] });
@@ -329,8 +380,8 @@ describe("summarize runs", () => {
     expect(port.snapshots()).toEqual([null]);
     expect(port.runEvents()).toEqual([
       { type: "phase", phase: "extracting", auto: false },
-      { type: "article", title: "T", truncated: false },
       { type: "phase", phase: "summarizing" },
+      { type: "article", title: "T", truncated: false },
       { type: "chunk", text: "Hello " },
       { type: "chunk", text: "world" },
       { type: "done" },
@@ -472,8 +523,8 @@ describe("summarize runs", () => {
     // new chunks to the old summary.
     expect(reattached.runEvents()).toEqual([
       { type: "phase", phase: "extracting", auto: false },
-      { type: "article", title: "T", truncated: false },
       { type: "phase", phase: "summarizing" },
+      { type: "article", title: "T", truncated: false },
       { type: "chunk", text: "S1" },
       { type: "done" },
     ]);

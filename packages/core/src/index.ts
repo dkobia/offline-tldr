@@ -1,5 +1,5 @@
 // Entry point for the summarization pipeline:
-// extractArticle(document) -> fitToBudget(text) -> buildPrompt(request) -> engine.summarize(request).
+// extractArticle(document) -> fitToBudget(text, planBudget(...).inputChars) -> buildPrompt(request) -> engine.summarize(request).
 // Core is pure logic: standard DOM types on documents handed to it are fine,
 // chrome.* / browser.* and network calls are not.
 
@@ -19,6 +19,11 @@ export interface SummaryRequest {
   format: SummaryFormat;
   /** Soft cap on output length, in words. */
   maxWords: number;
+  /**
+   * Hard cap on generated tokens, from the budget plan when the runtime's
+   * context is known. Engines fall back to outputTokenCap(maxWords).
+   */
+  maxOutputTokens?: number;
 }
 
 /**
@@ -32,6 +37,16 @@ export interface SummarizationEngine {
 }
 
 export { extractArticle } from "./extract";
-export { fitToBudget, DEFAULT_INPUT_CHAR_BUDGET, type FittedText } from "./chunk";
+export {
+  fitToBudget,
+  planBudget,
+  outputTokenCap,
+  DEFAULT_INPUT_CHAR_BUDGET,
+  MIN_INPUT_CHAR_BUDGET,
+  MAX_INPUT_CHAR_BUDGET,
+  type Budget,
+  type BudgetInput,
+  type FittedText,
+} from "./chunk";
 export { buildPrompt, type PromptParts } from "./prompt";
 export { pageKey } from "./page-key";
