@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS, isLocalEndpoint, isModelAvailable, normalizeSettings } from "./settings";
+import { DEFAULT_SETTINGS, availableEngines, defaultSettings, isLocalEndpoint, isModelAvailable, isServerEngine, normalizeSettings } from "./settings";
 
 describe("isModelAvailable", () => {
   it("matches exact names and, for Ollama only, the implicit :latest tag", () => {
@@ -82,10 +82,40 @@ describe("normalizeSettings", () => {
     expect(settings.model).toBe("");
   });
 
+  it("falls back to the platform's defaults, and keeps a saved engine whatever they are", () => {
+    const builtIn = defaultSettings(true);
+    expect(normalizeSettings(undefined, builtIn)).toEqual(builtIn);
+    expect(normalizeSettings({ engine: "cloud" }, builtIn).engine).toBe("builtin");
+    expect(normalizeSettings({ engine: "ollama", model: "llama3.2" }, builtIn)).toMatchObject({ engine: "ollama", model: "llama3.2" });
+    expect(normalizeSettings({ engine: "builtin" })).toMatchObject({ engine: "builtin", endpoint: "http://localhost:11434" });
+  });
+
   it("coerces autoSummarize to a real boolean, defaulting off", () => {
     expect(normalizeSettings({}).autoSummarize).toBe(false);
     expect(normalizeSettings({ autoSummarize: true }).autoSummarize).toBe(true);
     expect(normalizeSettings({ autoSummarize: "yes" }).autoSummarize).toBe(false);
     expect(normalizeSettings({ autoSummarize: 1 }).autoSummarize).toBe(false);
+  });
+});
+
+describe("defaultSettings", () => {
+  it("is the built-in model where the browser has one and Ollama elsewhere", () => {
+    expect(defaultSettings(true)).toEqual({ ...DEFAULT_SETTINGS, engine: "builtin" });
+    expect(defaultSettings(false)).toEqual(DEFAULT_SETTINGS);
+  });
+});
+
+describe("availableEngines", () => {
+  it("offers the built-in model first, and only where the browser has one", () => {
+    expect(availableEngines(true)).toEqual(["builtin", "ollama", "lmstudio", "llamacpp", "custom"]);
+    expect(availableEngines(false)).toEqual(["ollama", "lmstudio", "llamacpp", "custom"]);
+  });
+});
+
+describe("isServerEngine", () => {
+  it("is every engine but the built-in model", () => {
+    expect(isServerEngine("builtin")).toBe(false);
+    expect(isServerEngine("ollama")).toBe(true);
+    expect(isServerEngine("custom")).toBe(true);
   });
 });

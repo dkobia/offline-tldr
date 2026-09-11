@@ -17,6 +17,13 @@ export type FetchFn = typeof fetch;
 
 /** Core's engine contract plus what the settings UI and the budget need: reachability, models, context. */
 export interface EngineClient extends SummarizationEngine {
+  /**
+   * Whether the model may spend output tokens reasoning before the summary,
+   * so the budget reserves headroom for it. True for the local servers (the
+   * model behind them is anyone's guess); false for the browser's built-in
+   * model, which has no thinking mode.
+   */
+  readonly reasoning: boolean;
   probe(signal?: AbortSignal): Promise<EngineStatus>;
   /**
    * Context length in tokens of the configured model as the runtime currently

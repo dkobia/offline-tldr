@@ -28,9 +28,54 @@ export interface ActiveTab {
   complete: boolean;
 }
 
+/** Whether the browser's built-in model can be used right now, as the Prompt API reports it. */
+export type BuiltInAvailability = "unavailable" | "downloadable" | "downloading" | "available";
+
+/** One conversation with the built-in model: a system prompt, then one streamed answer. */
+export interface BuiltInSession {
+  /** The session's whole context in tokens (the system prompt included), or null when the browser does not say. */
+  readonly contextWindow: number | null;
+  /** The model's answer to `input`, as text deltas. */
+  stream(input: string, signal?: AbortSignal): AsyncIterable<string>;
+  /** Frees the session; a pending stream errors. */
+  destroy(): void;
+}
+
+export interface BuiltInSessionOptions {
+  /** The system prompt, sent once ahead of the conversation. */
+  system?: string;
+  signal?: AbortSignal;
+  /**
+   * Download progress, 0 to 1, when creating the session first has to fetch
+   * the model. Chrome does that only from a page the user just interacted
+   * with, so the panel starts the download; the background only uses a model
+   * that is already there.
+   */
+  onProgress?: (fraction: number) => void;
+}
+
+/**
+ * The browser's own on-device model (Chrome's Gemini Nano, through the Prompt
+ * API). Inference runs inside the browser; nothing is sent anywhere. The
+ * model is the browser's: one download, shared by every site and extension
+ * that uses it.
+ */
+export interface BuiltInModel {
+  availability(): Promise<BuiltInAvailability>;
+  /** Creates a session, downloading the model first when it is not there yet (see BuiltInSessionOptions.onProgress). */
+  create(options?: BuiltInSessionOptions): Promise<BuiltInSession>;
+}
+
 export interface Platform {
   /** Which build this is; used for target-specific styling, never for logic branches. */
   readonly name: "chrome" | "firefox";
+
+  /**
+   * The browser's built-in model, when the browser has one. Chrome: always
+   * present (its availability says whether this Chrome and this device can
+   * run it). Firefox: none.
+   */
+  readonly builtInModel: BuiltInModel | undefined;
 
   getSetting<T>(key: string, fallback: T): Promise<T>;
   setSetting<T>(key: string, value: T): Promise<void>;

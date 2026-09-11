@@ -31,6 +31,7 @@ describe("fitToBudget", () => {
 describe("outputTokenCap", () => {
   it("adds flat thinking headroom to the words-to-tokens estimate", () => {
     expect(outputTokenCap(150)).toBe(150 * 4 + 4096);
+    expect(outputTokenCap(150, 0)).toBe(600);
   });
 });
 
@@ -73,6 +74,17 @@ describe("planBudget", () => {
       expect(Math.ceil(inputChars / 4) + 256 + outputTokens).toBeLessThanOrEqual(contextTokens);
     }
     expect(planBudget({ contextTokens: 512, maxWords: 150 }).inputChars).toBe(0);
+  });
+
+  it("reserves no thinking headroom for a model that does not reason, so a 6k window holds a real article", () => {
+    // Chrome's built-in model: about 6k tokens, no thinking mode.
+    const thinking = planBudget({ contextTokens: 6144, maxWords: 150 });
+    const plain = planBudget({ contextTokens: 6144, maxWords: 150, reasoning: false });
+    expect(thinking.inputChars).toBe((6144 - cap - 256) * 4);
+    expect(plain).toEqual({ inputChars: (6144 - 600 - 256) * 4, outputTokens: 600 });
+    expect(plain.inputChars).toBeGreaterThan(4 * thinking.inputChars);
+    // The unknown-context fallback is unaffected.
+    expect(planBudget({ contextTokens: null, maxWords: 150, reasoning: false })).toEqual({ inputChars: 20_000, outputTokens: 600 });
   });
 
   it("caps huge contexts so prompt processing stays bounded", () => {

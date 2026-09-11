@@ -6,4 +6,4 @@ import { platform } from "@platform";
 import { createEngineClient } from "./engines";
 import { startBackground } from "./service";
 
-startBackground({ platform, createEngine: createEngineClient });
+startBackground({ platform, createEngine: (settings) => createEngineClient(settings, { builtIn: platform.builtInModel }) });

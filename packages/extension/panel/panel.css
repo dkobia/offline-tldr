@@ -523,6 +523,12 @@ button.primary:disabled {
 
 /* ---- Settings ---- */
 
+/* A group of fields that hides as one (the server's address and model); its
+   children stay direct items of the section's column, keeping its gap. */
+.server-settings {
+  display: contents;
+}
+
 .field {
   display: flex;
   flex-direction: column;

@@ -7,7 +7,7 @@ import type {
   SummarizePortEvent,
   TabSummaryState,
 } from "@offline-tldr/shared";
-import type { ActiveTab, MessageHandler, Platform, PlatformPort } from "../platform/types";
+import type { ActiveTab, BuiltInModel, MessageHandler, Platform, PlatformPort } from "../platform/types";
 import { DEFAULT_SETTINGS } from "../lib/settings";
 import type { EngineClient } from "./engines";
 import { EngineError } from "./engines";
@@ -59,10 +59,13 @@ interface FakePlatformOptions {
   session?: Record<string, unknown>;
   /** Hold session writes open until releaseSessionWrites() (simulates slow storage). */
   gateSessionWrites?: boolean;
+  /** The browser's built-in model, when this fake browser has one; the fake engine still answers the calls. */
+  builtInModel?: BuiltInModel;
 }
 
 class FakePlatform implements Platform {
   readonly name = "chrome";
+  readonly builtInModel: BuiltInModel | undefined;
   readonly storage = new Map<string, unknown>();
   readonly session = new Map<string, unknown>();
   readonly injectedTabs: number[] = [];
@@ -81,6 +84,7 @@ class FakePlatform implements Platform {
 
   constructor(options: FakePlatformOptions = {}) {
     this.activeTabId = "activeTabId" in options ? options.activeTabId : 1;
+    this.builtInModel = options.builtInModel;
     this.tabResponses = options.tabResponses ?? [];
     this.sessionGateOpen = !options.gateSessionWrites;
     for (const [key, value] of Object.entries(options.session ?? {})) {
@@ -174,6 +178,8 @@ class FakePlatform implements Platform {
 
 class FakeEngine implements EngineClient {
   readonly name = "fake";
+  /** Whether the budget reserves thinking headroom; the servers' default. */
+  reasoning = true;
   requests: SummaryRequest[] = [];
   signals: (AbortSignal | undefined)[] = [];
   /** What contextLength() reports; null mimics a runtime that cannot say. */
@@ -285,6 +291,26 @@ describe("messages", () => {
     expect(engineSettings[0]?.endpoint).toBe("http://localhost:11434");
   });
 
+  it("defaults to the browser's built-in model where there is one, and keeps a saved engine", async () => {
+    const builtInModel: BuiltInModel = { availability: async () => "available", create: () => Promise.reject(new Error("unused")) };
+    const platform = new FakePlatform({ builtInModel });
+    const { engineSettings } = start(platform, new FakeEngine());
+    expect(await platform.dispatch({ type: "get-settings" })).toEqual({ settings: { ...DEFAULT_SETTINGS, engine: "builtin" } });
+    // Garbage in storage falls back to the same default.
+    await platform.dispatch({ type: "save-settings", settings: { engine: "cloud" } });
+    expect(await platform.dispatch({ type: "get-settings" })).toEqual({ settings: { ...DEFAULT_SETTINGS, engine: "builtin" } });
+    // A saved server stays.
+    await platform.dispatch({ type: "save-settings", settings: { ...DEFAULT_SETTINGS, model: "llama3.2" } });
+    expect(await platform.dispatch({ type: "get-settings" })).toEqual({ settings: { ...DEFAULT_SETTINGS, model: "llama3.2" } });
+    await platform.dispatch({ type: "probe-engine", settings: {} });
+    expect(engineSettings.at(-1)?.engine).toBe("builtin");
+
+    // A browser without one keeps Ollama.
+    const plain = new FakePlatform();
+    start(plain, new FakeEngine());
+    expect(await plain.dispatch({ type: "get-settings" })).toEqual({ settings: DEFAULT_SETTINGS });
+  });
+
   it("leaves unknown messages unhandled", () => {
     const platform = new FakePlatform();
     start(platform, new FakeEngine());
@@ -359,6 +385,18 @@ describe("input budget", () => {
     expect(request.article.text.length).toBeLessThan(20_000);
     expect(request.maxOutputTokens).toBeLessThan(outputTokenCap(DEFAULT_SETTINGS.maxWords));
     expect(Math.ceil(request.article.text.length / 4) + request.maxOutputTokens!).toBeLessThan(4096);
+  });
+
+  it("reserves no thinking headroom for an engine that does not reason", async () => {
+    const platform = new FakePlatform({ tabResponses: [URL_RESPONSE, LONG_ARTICLE] });
+    const engine = new FakeEngine(["ok"]);
+    engine.reasoning = false;
+    engine.contextTokens = 6144;
+    start(platform, engine);
+    await summarizeAndWait(platform);
+    const request = engine.requests[0]!;
+    expect(request.maxOutputTokens).toBe(DEFAULT_SETTINGS.maxWords * 4);
+    expect(request.article.text.length).toBe((6144 - DEFAULT_SETTINGS.maxWords * 4 - 256) * 4);
   });
 
   it("requests the full output cap when the context has room", async () => {

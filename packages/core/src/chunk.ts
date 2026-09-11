@@ -18,12 +18,19 @@ export const MIN_INPUT_CHAR_BUDGET = 4_000;
 export const MAX_INPUT_CHAR_BUDGET = 160_000;
 
 /**
- * Ceiling on generated tokens: words-to-tokens headroom so a runaway
- * generation cannot go on forever, plus a flat extra for models that cannot
- * disable thinking and would otherwise spend the whole budget reasoning.
+ * Flat extra on the generation cap for models that cannot disable thinking
+ * and would otherwise spend the whole budget reasoning. A model known not to
+ * think (the browser's built-in one) gets none, so a small context is not
+ * mostly reserved for reasoning that never happens.
  */
-export function outputTokenCap(maxWords: number): number {
-  return maxWords * 4 + 4096;
+export const THINKING_HEADROOM_TOKENS = 4096;
+
+/**
+ * Ceiling on generated tokens: words-to-tokens headroom so a runaway
+ * generation cannot go on forever, plus the thinking headroom.
+ */
+export function outputTokenCap(maxWords: number, headroom: number = THINKING_HEADROOM_TOKENS): number {
+  return maxWords * 4 + headroom;
 }
 
 /** Below this the model cannot finish even a one-liner; a context this small is unusable anyway. */
@@ -33,6 +40,8 @@ export interface BudgetInput {
   /** Context length of the loaded model in tokens; null when the runtime does not report it. */
   contextTokens: number | null;
   maxWords: number;
+  /** Whether the model may spend output tokens reasoning before the summary (default: assume it may). */
+  reasoning?: boolean;
 }
 
 export interface Budget {
@@ -48,8 +57,8 @@ export interface Budget {
  * and when the context is too small for that (the floor kicks in) the cap
  * shrinks to what remains instead. Unknown contexts get the fixed defaults.
  */
-export function planBudget({ contextTokens, maxWords }: BudgetInput): Budget {
-  const cap = outputTokenCap(maxWords);
+export function planBudget({ contextTokens, maxWords, reasoning = true }: BudgetInput): Budget {
+  const cap = outputTokenCap(maxWords, reasoning ? THINKING_HEADROOM_TOKENS : 0);
   if (contextTokens === null || !Number.isFinite(contextTokens)) {
     return { inputChars: DEFAULT_INPUT_CHAR_BUDGET, outputTokens: cap };
   }

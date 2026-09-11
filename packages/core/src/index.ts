@@ -41,6 +41,7 @@ export {
   fitToBudget,
   planBudget,
   outputTokenCap,
+  THINKING_HEADROOM_TOKENS,
   DEFAULT_INPUT_CHAR_BUDGET,
   MIN_INPUT_CHAR_BUDGET,
   MAX_INPUT_CHAR_BUDGET,

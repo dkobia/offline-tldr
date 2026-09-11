@@ -5,14 +5,17 @@ import type { ExtractedArticle, SummaryFormat } from "@offline-tldr/core";
 
 export type { ExtractedArticle, SummaryFormat, SummaryRequest } from "@offline-tldr/core";
 
-/** Which local runtime the extension talks to. */
-export type EngineKind = "ollama" | "lmstudio" | "llamacpp" | "custom";
+/**
+ * Which on-device model the extension talks to: the browser's own built-in
+ * model (Chrome's Gemini Nano, through the Prompt API) or a local server.
+ */
+export type EngineKind = "builtin" | "ollama" | "lmstudio" | "llamacpp" | "custom";
 
 export interface Settings {
   engine: EngineKind;
-  /** Base URL of the local server, e.g. "http://localhost:11434". Localhost only. */
+  /** Base URL of the local server, e.g. "http://localhost:11434". Localhost only. Unused by the built-in model. */
   endpoint: string;
-  /** Model identifier as the server knows it, e.g. "llama3.2" or "phi3". */
+  /** Model identifier as the server knows it, e.g. "llama3.2" or "phi3". Unused by the built-in model. */
   model: string;
   format: SummaryFormat;
   /** Soft cap on summary length, in words. */
@@ -21,12 +24,18 @@ export interface Settings {
   autoSummarize: boolean;
 }
 
-/** Result of probing the configured engine endpoint. */
+/** Result of probing the configured engine: a local server's endpoint, or the browser's built-in model. */
 export type EngineStatus =
   | { state: "ok"; models: string[] }
   | { state: "unreachable"; detail?: string }
   /** Reachable but the server rejects browser-extension origins (Ollama without OLLAMA_ORIGINS). */
   | { state: "forbidden" }
+  /** The browser can run its built-in model but has not downloaded it yet; a user gesture in the panel starts that. */
+  | { state: "downloadable" }
+  /** The browser is downloading its built-in model; `progress` (0 to 1) is known only to the panel that started it. */
+  | { state: "downloading"; progress?: number }
+  /** The browser has no built-in model, or this device falls below its requirements. */
+  | { state: "unsupported" }
   | { state: "error"; detail: string };
 
 // ---- Panel/content -> background one-shot messages ----------------------------------
@@ -148,6 +157,8 @@ export type SummarizeErrorCode =
   | "engine-unreachable"
   | "origin-forbidden"
   | "model-missing"
+  /** The browser's built-in model is not downloaded, still downloading, or not supported on this device. */
+  | "model-unavailable"
   | "empty-summary"
   | "engine-error";
 

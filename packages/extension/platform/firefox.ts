@@ -13,6 +13,9 @@ function wrapPort(port: browser.runtime.Port): PlatformPort {
 export const platform: Platform = {
   name: "firefox",
 
+  // Firefox ships no Prompt API; the settings offer local servers only.
+  builtInModel: undefined,
+
   async getSetting<T>(key: string, fallback: T): Promise<T> {
     const stored = await browser.storage.local.get(key);
     return (stored[key] as T | undefined) ?? fallback;

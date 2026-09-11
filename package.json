@@ -14,7 +14,7 @@
     "pack:chrome": "node scripts/pack.mjs chrome",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --build",
+    "typecheck": "tsc --build --force",
     "clean": "rm -rf dist packages/*/dist packages/*/*.tsbuildinfo"
   },
   "devDependencies": {

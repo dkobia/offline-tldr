@@ -25,6 +25,7 @@ interface OllamaChatLine {
 
 export class OllamaEngine implements EngineClient {
   readonly name = "ollama";
+  readonly reasoning = true;
 
   constructor(
     private readonly endpoint: string,

@@ -53,6 +53,10 @@ await cp(path.join(root, "images", "icons"), path.join(outdir, "icons"), { recur
 const base = JSON.parse(await readFile(path.join(root, "manifests", "base.json"), "utf8"));
 const overlay = JSON.parse(await readFile(path.join(root, "manifests", `${target}.json`), "utf8"));
 const manifest = merge(base, overlay);
+// The store rejects a longer description at upload time, long after the build passed.
+if (manifest.description.length > 132) {
+  throw new Error(`manifest description is ${manifest.description.length} characters; the store allows 132`);
+}
 await writeFile(path.join(outdir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
 
 console.log(`built ${target} -> ${path.relative(root, outdir)}`);

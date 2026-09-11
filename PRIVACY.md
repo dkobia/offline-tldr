@@ -2,7 +2,7 @@
 
 **Offline TL;DR**
 
-Last updated: 31 August 2026
+Last updated: 11 September 2026
 
 ## Summary
 
@@ -15,7 +15,9 @@ The extension communicates only with software running on your own computer.
 To summarize a page, the extension reads the text of that page and its address.
 This happens on your device, in your browser.
 
-The extracted text is then sent to a local inference server that you run yourself, at an address on `localhost` or `127.0.0.1` that you configure in the extension's settings.
+The extracted text is then given to an on-device model.
+On Chrome, by default, that is the browser's built-in model (Gemini Nano), which runs inside Chrome on your device and sends nothing anywhere.
+Otherwise it is a local inference server that you run yourself, at an address on `localhost` or `127.0.0.1` that you configure in the extension's settings.
 Examples are Ollama, LM Studio, and a llama.cpp server.
 That server is on your machine, under your control, and is not operated by the developer of this extension.
 
@@ -35,12 +37,16 @@ Neither is uploaded anywhere.
 
 Removing the extension deletes both.
 
+If you use Chrome's built-in model, the model itself is Chrome's, not the extension's: Chrome downloads it once, from Google, when you click **Download model** in the extension's status, stores it with the browser, and shares it with every site and extension that uses it.
+The extension never starts that download on its own, and removing the extension does not remove the model; Chrome manages it, and `chrome://on-device-internals` shows it.
+
 ## Permissions
 
 - **`activeTab` and `scripting`** let the extension read the article text of the page you asked it to summarize.
 - **`storage`** keeps your settings and per-tab summaries, as described above.
 - **`sidePanel`** displays the extension's own interface. It does not read page content.
 - **Access to `localhost` and `127.0.0.1`** lets the extension reach the local inference server you run.
+- Chrome's built-in model needs no permission; the extension uses Chrome's Prompt API, which runs the model inside the browser.
 
 The extension's content script is registered for all sites, because you may ask for a summary of any page you are reading.
 It reads the page's article text and address only, and only when the extension asks it to.

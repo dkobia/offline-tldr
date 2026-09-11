@@ -21,6 +21,7 @@ interface ChatCompletionChunk {
 
 export class OpenAiCompatEngine implements EngineClient {
   readonly name: string;
+  readonly reasoning = true;
   private readonly base: string;
 
   constructor(

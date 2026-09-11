@@ -28,7 +28,7 @@ import {
   type SummarizePortEvent,
   type TabSummaryState,
 } from "@offline-tldr/shared";
-import { normalizeSettings } from "../lib/settings";
+import { defaultSettings, normalizeSettings } from "../lib/settings";
 import { EngineError, type EngineClient } from "./engines";
 
 const SETTINGS_KEY = "settings";
@@ -49,6 +49,9 @@ export interface BackgroundDeps {
 export function startBackground({ platform, createEngine }: BackgroundDeps): void {
   platform.initPanelBehavior();
 
+  /** A fresh install uses the browser's built-in model where there is one; a saved choice is kept as saved. */
+  const defaults = defaultSettings(platform.builtInModel !== undefined);
+
   const tabStates = new Map<number, TabSummaryState>();
   /** Ports watching a tab's run events; a port watches at most one tab. */
   const watchers = new Map<PlatformPort, number>();
@@ -66,11 +69,11 @@ export function startBackground({ platform, createEngine }: BackgroundDeps): voi
       case "get-settings":
         return loadSettings().then((settings): GetSettingsResponse => ({ settings }));
       case "save-settings": {
-        const settings = normalizeSettings(request.settings);
+        const settings = normalizeSettings(request.settings, defaults);
         return platform.setSetting(SETTINGS_KEY, settings).then((): GetSettingsResponse => ({ settings }));
       }
       case "probe-engine":
-        return probeEngine(normalizeSettings(request.settings));
+        return probeEngine(normalizeSettings(request.settings, defaults));
       case "get-active-page":
         return getActivePage();
       case "get-tab-state":
@@ -214,7 +217,7 @@ export function startBackground({ platform, createEngine }: BackgroundDeps): voi
   // ---- Settings and probing ---------------------------------------------------------
 
   async function loadSettings(): Promise<Settings> {
-    return normalizeSettings(await platform.getSetting<unknown>(SETTINGS_KEY, undefined));
+    return normalizeSettings(await platform.getSetting<unknown>(SETTINGS_KEY, undefined), defaults);
   }
 
   async function probeEngine(settings: Settings): Promise<ProbeEngineResponse> {
@@ -355,12 +358,13 @@ export function startBackground({ platform, createEngine }: BackgroundDeps): voi
 
       // The article is fitted to what the loaded model can actually take,
       // with the generation cap planned alongside it so the two never overlap;
-      // runtimes that report nothing get the fixed defaults.
+      // runtimes that report nothing get the fixed defaults. A model that
+      // cannot think gets no reasoning headroom reserved out of its context.
       const contextTokens = await engine.contextLength(signal);
       if (signal.aborted) {
         return;
       }
-      const budget = planBudget({ contextTokens, maxWords: settings.maxWords });
+      const budget = planBudget({ contextTokens, maxWords: settings.maxWords, reasoning: engine.reasoning });
       const fitted = fitToBudget(article.text, budget.inputChars);
       write((entry) => {
         entry.truncated = fitted.truncated;

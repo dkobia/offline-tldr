@@ -7,7 +7,7 @@
 **Privacy-first, on-device web content summarization.**
 
 Offline TL;DR is a lightweight, zero-telemetry browser extension that extracts, condenses, and synthesizes web articles, documents, and page content entirely on your local machine.
-It talks only to local inference runtimes - Ollama, LM Studio, llama.cpp server, and other localhost endpoints - so your browsing context and text data never touch a cloud server.
+It talks only to on-device models - Chrome's built-in Gemini Nano, or a local runtime you run: Ollama, LM Studio, llama.cpp server, and other localhost endpoints - so your browsing context and text data never touch a cloud server.
 
 <p align="center">
   <img src="images/demo.gif" alt="Offline TL;DR summarizing a page" width="800" />
@@ -20,6 +20,7 @@ The page you are reading is your business.
 Everything here runs on hardware you control:
 
 - **100% on-device processing.** Zero data transmission, zero logging, zero telemetry.
+- **Works out of the box on Chrome.** Chrome's built-in model (Gemini Nano) is the default: nothing to install or run.
 - **Local backends you already run.** Point the extension at Ollama (`localhost:11434`), LM Studio (`localhost:1234`), a llama.cpp server, or any compatible localhost endpoint.
 - **Offline ready.** Fully operational without an internet connection once a model is pulled.
 - **Distraction-free extraction.** DOM clutter (sidebars, ads, navigation) is stripped before text reaches the model.
@@ -35,7 +36,7 @@ flowchart TD
     page[Browser page / DOM]
     extract["Readability DOM parser<br/><i>strips nav, ads, scripts, footers</i>"]
     chunk["Chunking & tokenizer<br/><i>manages context window constraints</i>"]
-    engine["Local inference engine<br/>Ollama · LM Studio · llama.cpp server<br/><i>REST / OpenAI-compatible APIs on localhost</i>"]
+    engine["On-device model<br/>Chrome built-in · Ollama · LM Studio · llama.cpp server<br/><i>Prompt API in the browser, or REST / OpenAI-compatible APIs on localhost</i>"]
     panel[Extension sidepanel / popup]
 
     page -->|full page| extract
@@ -45,25 +46,33 @@ flowchart TD
 ```
 
 Extraction and chunking are pure logic in `packages/core`, testable against static HTML fixtures without a browser.
-The engines are thin HTTP clients in the extension, each implementing the `SummarizationEngine` contract that core defines.
+The engines are thin clients in the extension (two HTTP clients and one over Chrome's Prompt API), each implementing the `SummarizationEngine` contract that core defines.
 Nothing in any code path sends page content, prompts, or metadata to a remote host; the manifest requests localhost access only.
 
 ## Backends
 
 | Backend | Prerequisites | Typical models |
 | :--- | :--- | :--- |
+| **Chrome built-in** | Chrome 138 or newer on a desktop that meets Chrome's requirements (see below) | Gemini Nano |
 | **Ollama** | [Ollama](https://ollama.com) running locally | `llama3.2`, `mistral`, `phi3` |
 | **LM Studio** | [LM Studio](https://lmstudio.ai) with its local server enabled | any loaded chat model |
 | **llama.cpp** | `llama-server` on a localhost port | any GGUF chat model |
 
-Browser built-in AI (Chrome's on-device model) and pure in-browser Wasm inference (Transformers.js) are candidates for later backends; the localhost runtimes come first.
+Chrome's built-in model is the default on Chrome: nothing to install or run.
+Chrome downloads Gemini Nano once (a few GB) when you click **Download model** in the panel's status, and keeps it for every site and extension that uses it.
+It needs about 22 GB of free disk space and either a GPU with more than 4 GB of memory or 16 GB of RAM with 4 cores; on a machine below that, the panel says so and you can pick a local server instead.
+Its context is small (about 6k tokens), so long pages are cut to what fits; a local server with a bigger context takes more of the page.
+Firefox has no built-in model.
+
+Pure in-browser Wasm inference (Transformers.js) is a candidate for a later backend.
 
 ## Install
 
 - Chrome / Edge: [Offline TL;DR on the Chrome Web Store](https://chromewebstore.google.com/detail/offline-tldr/cgibooiickogggdkhpbmflgookgjpbnl).
 - Firefox: not yet listed - build and load it from source below.
 
-Then start a local runtime (see Quick start, step 3) and pick your engine and model in the panel's settings.
+On Chrome, open the panel and click **Download model** the first time.
+To use a local runtime instead, start it (see Quick start, step 3) and pick your engine and model in the panel's settings.
 
 ## Quick start (developer mode)
 
@@ -78,7 +87,7 @@ Then start a local runtime (see Quick start, step 3) and pick your engine and mo
    - Chrome / Edge: open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, select `dist/chrome`.
    - Firefox: open `about:debugging`, click **Load Temporary Add-on**, select `dist/firefox/manifest.json`.
 
-3. Start a local runtime.
+3. Optionally start a local runtime (on Chrome the built-in model is selected already).
    Ollama must be told to accept browser-extension origins:
 
    ```sh
@@ -89,7 +98,7 @@ Then start a local runtime (see Quick start, step 3) and pick your engine and mo
    For LM Studio, start the server in the Developer tab; for llama.cpp, run `llama-server -m <model.gguf> --port 8080`.
 
 4. Click the toolbar button to open the panel.
-   It detects whether your engine is running (and shows the exact command to start it when it isn't), lists the models your server offers in settings, and summarizes the current page with one click.
+   It detects whether your model is ready (offering the download of Chrome's built-in model, or showing the exact command to start a server when it isn't running), lists the models your server offers in settings, and summarizes the current page with one click.
 
 ## Layout
 

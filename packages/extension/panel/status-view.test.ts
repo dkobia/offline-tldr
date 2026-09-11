@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Settings } from "@offline-tldr/shared";
-import { describeStatusShort, statusView, type BannerBlock } from "./status-view";
+import { describeStatusShort, effectiveStatus, statusView, type BannerBlock } from "./status-view";
 
 const base: Settings = {
   engine: "ollama",
@@ -118,6 +118,95 @@ describe("statusView: down states", () => {
   });
 });
 
+describe("statusView for the built-in model", () => {
+  const builtIn: Settings = { ...base, engine: "builtin", model: "" };
+
+  it("is ready without a model name, and Auto when the switch is on", () => {
+    expect(statusView(builtIn, { state: "ok", models: ["Gemini Nano"] }, "chrome")).toEqual({
+      dot: "ok",
+      label: "Ready",
+      summarizeEnabled: true,
+      banner: null,
+    });
+    expect(statusView({ ...builtIn, autoSummarize: true }, { state: "ok", models: ["Gemini Nano"] }, "chrome").label).toBe("Auto");
+  });
+
+  it("offers the download when the model is not there yet, with Summarize disabled", () => {
+    const view = statusView(builtIn, { state: "downloadable" }, "chrome");
+    expect(view.dot).toBe("warn");
+    expect(view.label).toBe("No model");
+    expect(view.summarizeEnabled).toBe(false);
+    expect(view.banner?.tone).toBe("warn");
+    expect(view.banner?.title).toContain("isn’t downloaded yet");
+    expect(view.banner?.showDownload).toBe(true);
+    expect(view.banner?.showRetry).toBe(false);
+    expect(paragraphs(view.banner?.blocks ?? []).join(" ")).toContain("never sent anywhere");
+  });
+
+  it("shows progress for a download this panel started, and a recheck for one it did not", () => {
+    const own = statusView(builtIn, { state: "downloading", progress: 0.426 }, "chrome");
+    expect(own.dot).toBe("probing");
+    expect(own.label).toBe("Downloading 42%");
+    expect(own.summarizeEnabled).toBe(false);
+    expect(own.banner?.showRetry).toBe(false);
+    expect(own.banner?.showDownload).toBe(false);
+    expect(paragraphs(own.banner?.blocks ?? []).join(" ")).toContain("42% downloaded");
+
+    const other = statusView(builtIn, { state: "downloading" }, "chrome");
+    expect(other.label).toBe("Downloading");
+    expect(other.banner?.showRetry).toBe(true);
+  });
+
+  it("explains an unsupported device and points at the servers", () => {
+    const view = statusView(builtIn, { state: "unsupported" }, "chrome");
+    expect(view.dot).toBe("down");
+    expect(view.label).toBe("Unavailable");
+    expect(view.summarizeEnabled).toBe(false);
+    expect(view.banner?.tone).toBe("down");
+    expect(view.banner?.showRetry).toBe(true);
+    expect(view.banner?.showDownload).toBe(false);
+    const text = paragraphs(view.banner?.blocks ?? []).join(" ");
+    expect(text).toContain("Chrome 138");
+    expect(text).toContain("22 GB");
+    expect(text).toContain("Ollama");
+  });
+
+  it("still reports an error from the browser, without calling it offline", () => {
+    const view = statusView(builtIn, { state: "error", detail: "boom" }, "chrome");
+    expect(view.dot).toBe("down");
+    expect(view.label).toBe("Error");
+    expect(view.summarizeEnabled).toBe(false);
+    expect(view.banner?.title).toBe("Chrome’s built-in model returned an error");
+    expect(paragraphs(view.banner?.blocks ?? [])).toContain("boom");
+    expect(view.banner?.showRetry).toBe(true);
+  });
+
+  it("never offers the download for a server engine", () => {
+    for (const status of [{ state: "unreachable" as const }, { state: "forbidden" as const }, { state: "ok" as const, models: [] }]) {
+      expect(statusView(base, status, "chrome").banner?.showDownload ?? false).toBe(false);
+    }
+  });
+});
+
+describe("effectiveStatus", () => {
+  const builtIn: Settings = { ...base, engine: "builtin", model: "" };
+  const probed = { state: "downloadable" as const };
+
+  it("lets a running download own the built-in engine's status, and its failure too", () => {
+    expect(effectiveStatus(builtIn, probed, { progress: 0.3 })).toEqual({ state: "downloading", progress: 0.3 });
+    expect(effectiveStatus(builtIn, null, { progress: 0 })).toEqual({ state: "downloading", progress: 0 });
+    expect(effectiveStatus(builtIn, probed, { failed: "NetworkError" })).toEqual({ state: "error", detail: "NetworkError" });
+  });
+
+  it("shows the probe when nothing is downloading, or when a server is selected mid-download", () => {
+    expect(effectiveStatus(builtIn, probed, null)).toBe(probed);
+    expect(effectiveStatus(builtIn, null, null)).toBeNull();
+    const ollama = { state: "unreachable" as const };
+    expect(effectiveStatus(base, ollama, { progress: 0.5 })).toBe(ollama);
+    expect(effectiveStatus(base, null, { failed: "x" })).toBeNull();
+  });
+});
+
 describe("describeStatusShort", () => {
   it("is engine-aware for forbidden", () => {
     expect(describeStatusShort({ state: "forbidden" }, "ollama")).toContain("OLLAMA_ORIGINS");
@@ -129,5 +218,12 @@ describe("describeStatusShort", () => {
     expect(describeStatusShort({ state: "ok", models: [] }, "ollama")).toContain("running");
     expect(describeStatusShort({ state: "unreachable" }, "custom")).toContain("isn’t reachable");
     expect(describeStatusShort({ state: "error", detail: "boom" }, "llamacpp")).toContain("boom");
+  });
+
+  it("speaks of the built-in model in its own states", () => {
+    expect(describeStatusShort({ state: "ok", models: ["Gemini Nano"] }, "builtin")).toBe("Chrome’s built-in model is ready.");
+    expect(describeStatusShort({ state: "downloadable" }, "builtin")).toContain("isn’t downloaded yet");
+    expect(describeStatusShort({ state: "downloading" }, "builtin")).toContain("downloading");
+    expect(describeStatusShort({ state: "unsupported" }, "builtin")).toContain("isn’t available on this device");
   });
 });

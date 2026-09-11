@@ -78,20 +78,24 @@
         <label class="field">
           <span class="field-label">Engine</span>
           <select id="engine-select"></select>
+          <span id="engine-hint" class="field-hint" hidden>Gemini Nano runs inside Chrome on this device. Chrome downloads it once and shares it with every site and extension that uses it.</span>
         </label>
 
-        <label class="field">
-          <span class="field-label">Endpoint</span>
-          <input id="endpoint-input" type="url" spellcheck="false" placeholder="http://localhost:11434" />
-          <span class="field-hint">Localhost only. Page content never leaves this machine.</span>
-        </label>
+        <!-- A local server has an address and a choice of models; the browser's built-in model has neither. -->
+        <div id="server-settings" class="server-settings">
+          <label class="field">
+            <span class="field-label">Endpoint</span>
+            <input id="endpoint-input" type="url" spellcheck="false" placeholder="http://localhost:11434" />
+            <span class="field-hint">Localhost only. Page content never leaves this machine.</span>
+          </label>
 
-        <label class="field">
-          <span class="field-label">Model</span>
-          <input id="model-input" type="text" list="model-options" spellcheck="false" placeholder="llama3.2" />
-          <datalist id="model-options"></datalist>
-          <span id="model-hint" class="field-hint">Use “Test connection” to list the models your server offers.</span>
-        </label>
+          <label class="field">
+            <span class="field-label">Model</span>
+            <input id="model-input" type="text" list="model-options" spellcheck="false" placeholder="llama3.2" />
+            <datalist id="model-options"></datalist>
+            <span id="model-hint" class="field-hint">Use “Test connection” to list the models your server offers.</span>
+          </label>
+        </div>
 
         <label class="field">
           <span class="field-label">Max summary length (words)</span>

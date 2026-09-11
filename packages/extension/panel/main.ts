@@ -21,10 +21,10 @@ import {
   type SummarizePortEvent,
   type TabSummaryState,
 } from "@offline-tldr/shared";
-import { DEFAULT_ENDPOINTS, ENGINE_LABELS, isLocalEndpoint, normalizeSettings } from "../lib/settings";
+import { DEFAULT_ENDPOINTS, ENGINE_LABELS, availableEngines, defaultSettings, isLocalEndpoint, isServerEngine, normalizeSettings } from "../lib/settings";
 import { createAutoRun } from "./auto";
 import { applyRunEvent, createTabStream, emptyView, viewFromState, type RunView } from "./tab-stream";
-import { describeStatusShort, statusView } from "./status-view";
+import { describeStatusShort, effectiveStatus, statusView, type DownloadState } from "./status-view";
 import { renderMarkdown } from "./markdown";
 import type { PlatformPort } from "../platform/types";
 
@@ -40,6 +40,8 @@ const el = {
   runStatus: byId<HTMLParagraphElement>("run-status"),
   summaryOutput: byId<HTMLElement>("summary-output"),
   engineSelect: byId<HTMLSelectElement>("engine-select"),
+  engineHint: byId<HTMLSpanElement>("engine-hint"),
+  serverSettings: byId<HTMLDivElement>("server-settings"),
   endpointInput: byId<HTMLInputElement>("endpoint-input"),
   modelInput: byId<HTMLInputElement>("model-input"),
   modelOptions: byId<HTMLDataListElement>("model-options"),
@@ -50,8 +52,25 @@ const el = {
   settingsStatus: byId<HTMLParagraphElement>("settings-status"),
 };
 
+/** Whether this browser has a built-in model: decides the default engine and whether settings offer it. */
+const hasBuiltIn = platform.builtInModel !== undefined;
 let settings: Settings;
 let status: EngineStatus | null = null;
+/** A download the browser is running on its own is watched by asking again now and then. */
+const DOWNLOAD_POLL_MS = 5_000;
+let downloadPoll: ReturnType<typeof setTimeout> | undefined;
+/** The download of the built-in model this panel is running, if any; effectiveStatus says when it shows. */
+let download: DownloadState | null = null;
+/** Counts probes, so a slow answer for earlier settings is dropped, never painted over a newer one. */
+let probeSeq = 0;
+/** Counts saves, so a slow answer to an earlier save never overwrites a newer one (the user's over a probe's model adoption). */
+let settingsSeq = 0;
+/**
+ * Counts changes of the probed engine (its kind or endpoint), so a probe's
+ * answer for an earlier one is dropped and never read as the new one's
+ * readiness. The model name does not change what a probe asks.
+ */
+let engineSeq = 0;
 
 // ---- The watched tab ----------------------------------------------------------------
 
@@ -67,7 +86,10 @@ let view: RunView = emptyView();
 // effects to the panel: page and stored-state lookups via the background,
 // and starting a run pinned to the qualified tab.
 const autoRun = createAutoRun({
-  enabled: () => settings.autoSummarize && status !== null && statusView(settings, status, platform.name).summarizeEnabled,
+  enabled: () => {
+    const shown = effectiveStatus(settings, status, download);
+    return settings.autoSummarize && shown !== null && statusView(settings, shown, platform.name).summarizeEnabled;
+  },
   getPage: async () => ((await platform.sendMessage({ type: "get-active-page" })) as GetActivePageResponse).page,
   hasState: async (page) => {
     const response = (await platform.sendMessage({
@@ -102,10 +124,10 @@ async function init(): Promise<void> {
   const response = (await platform.sendMessage({ type: "get-settings" })) as GetSettingsResponse;
   settings = response.settings;
 
-  for (const [kind, label] of Object.entries(ENGINE_LABELS)) {
+  for (const kind of availableEngines(hasBuiltIn)) {
     const option = document.createElement("option");
     option.value = kind;
-    option.textContent = label;
+    option.textContent = ENGINE_LABELS[kind];
     el.engineSelect.append(option);
   }
   syncSettingsForm();
@@ -124,7 +146,6 @@ async function init(): Promise<void> {
   // and unlocks auto mode.
   await activate();
   await probeAndRender();
-  autoRun.trigger();
 }
 
 /**
@@ -217,6 +238,7 @@ function wireEvents(): void {
     el.endpointInput.value = DEFAULT_ENDPOINTS[engine];
     el.modelInput.value = "";
     setModelOptions([]);
+    renderEngineFields(engine);
   });
 
   el.testConnectionButton.addEventListener("click", () => void testConnection());
@@ -239,34 +261,54 @@ function syncSettingsForm(): void {
   el.modelInput.value = settings.model;
   el.maxWordsInput.value = String(settings.maxWords);
   el.autoSummarizeInput.checked = settings.autoSummarize;
-  setModelOptions(status?.state === "ok" ? status.models : []);
+  setModelOptions(status?.state === "ok" && isServerEngine(settings.engine) ? status.models : []);
+  renderEngineFields(settings.engine);
+}
+
+/** The address and model name belong to a server; the built-in model has a note instead. */
+function renderEngineFields(engine: EngineKind): void {
+  const server = isServerEngine(engine);
+  el.serverSettings.hidden = !server;
+  el.engineHint.hidden = server;
+  el.testConnectionButton.textContent = server ? "Test connection" : "Check model";
 }
 
 function settingsFromForm(): Settings {
-  return normalizeSettings({
-    engine: el.engineSelect.value,
-    endpoint: el.endpointInput.value.trim(),
-    model: el.modelInput.value.trim(),
-    format: el.formatSelect.value,
-    maxWords: Number(el.maxWordsInput.value),
-    autoSummarize: el.autoSummarizeInput.checked,
-  });
+  return normalizeSettings(
+    {
+      engine: el.engineSelect.value,
+      endpoint: el.endpointInput.value.trim(),
+      model: el.modelInput.value.trim(),
+      format: el.formatSelect.value,
+      maxWords: Number(el.maxWordsInput.value),
+      autoSummarize: el.autoSummarizeInput.checked,
+    },
+    defaultSettings(hasBuiltIn),
+  );
+}
+
+/** The endpoint matters only for a server engine, and then it must be local. */
+function endpointAcceptable(): boolean {
+  return !isServerEngine(el.engineSelect.value as EngineKind) || isLocalEndpoint(el.endpointInput.value.trim());
 }
 
 async function testConnection(): Promise<void> {
-  if (!isLocalEndpoint(el.endpointInput.value.trim())) {
+  if (!endpointAcceptable()) {
     showSettingsStatus("Endpoint must be a localhost URL (http://localhost or http://127.0.0.1).", "error");
     return;
   }
   const candidate = settingsFromForm();
-  showSettingsStatus("Connecting…", "muted");
+  const server = isServerEngine(candidate.engine);
+  showSettingsStatus(server ? "Connecting…" : "Checking…", "muted");
   el.testConnectionButton.disabled = true;
   try {
     const { status: probed } = (await platform.sendMessage({
       type: "probe-engine",
       settings: candidate,
     })) as ProbeEngineResponse;
-    if (probed.state === "ok") {
+    if (probed.state === "ok" && !server) {
+      showSettingsStatus(describeStatusShort(probed, candidate.engine), "ok");
+    } else if (probed.state === "ok") {
       setModelOptions(probed.models);
       if (!el.modelInput.value.trim() && probed.models[0]) {
         el.modelInput.value = probed.models[0];
@@ -285,12 +327,15 @@ async function testConnection(): Promise<void> {
 }
 
 async function saveFromForm(): Promise<void> {
+  if (!endpointAcceptable()) {
+    showSettingsStatus("Endpoint must be a localhost URL (http://localhost or http://127.0.0.1).", "error");
+    return;
+  }
   await saveSettings(settingsFromForm());
   closeSettings();
+  // The probe re-evaluates auto mode, so enabling the switch takes effect
+  // immediately instead of waiting for the next navigation.
   await probeAndRender();
-  // Enabling the switch takes effect immediately instead of waiting for the
-  // next navigation.
-  autoRun.trigger();
 }
 
 function closeSettings(): void {
@@ -299,8 +344,24 @@ function closeSettings(): void {
   el.settingsToggle.setAttribute("aria-expanded", "false");
 }
 
+/**
+ * Applied at once, so a save that follows builds on this one; the
+ * background's normalized answer then replaces it, unless a newer save has
+ * taken over meanwhile, in which case this answer is stale and dropped.
+ */
 async function saveSettings(next: Settings): Promise<void> {
+  if (next.engine !== settings.engine || next.endpoint !== settings.endpoint) {
+    // Whatever was probed is another engine's readiness; the probe that
+    // follows the save establishes the new one's.
+    engineSeq += 1;
+    status = null;
+  }
+  settings = next;
+  const seq = ++settingsSeq;
   const response = (await platform.sendMessage({ type: "save-settings", settings: next })) as GetSettingsResponse;
+  if (seq !== settingsSeq) {
+    return;
+  }
   settings = response.settings;
   el.formatSelect.value = settings.format;
 }
@@ -324,27 +385,83 @@ function showSettingsStatus(text: string, tone: "muted" | "ok" | "error"): void 
 // ---- Engine status ------------------------------------------------------------------
 
 async function probeAndRender(): Promise<void> {
-  el.statusDot.dataset["state"] = "probing";
-  el.statusText.textContent = "Checking";
+  clearTimeout(downloadPoll);
+  if (download && "failed" in download) {
+    // Asking again is how a failed download is dismissed.
+    download = null;
+  }
+  const seq = ++probeSeq;
+  const engineAtProbe = engineSeq;
+  status = null;
+  renderStatus();
   const { status: probed } = (await platform.sendMessage({
     type: "probe-engine",
     settings,
   })) as ProbeEngineResponse;
+  if (seq !== probeSeq || engineSeq !== engineAtProbe) {
+    // Superseded: by a newer probe, or by a save of another engine (whose
+    // own probe follows). This answer describes an engine no longer selected.
+    return;
+  }
   status = probed;
 
   // First run convenience: adopt the server's first model when none is chosen.
-  if (probed.state === "ok" && !settings.model && probed.models[0]) {
+  if (probed.state === "ok" && isServerEngine(settings.engine) && !settings.model && probed.models[0]) {
     await saveSettings({ ...settings, model: probed.models[0] });
+    if (seq !== probeSeq || engineSeq !== engineAtProbe) {
+      return;
+    }
   }
 
   renderStatus();
+  if (probed.state === "downloading" && !download) {
+    downloadPoll = setTimeout(() => void probeAndRender(), DOWNLOAD_POLL_MS);
+  }
+  // Every accepted probe may have unlocked auto mode: a server came up, or a
+  // download (this panel's, or one watched by the poll) finished.
+  autoRun.trigger();
+}
+
+/**
+ * Fetches the browser's built-in model. Chrome starts the download only from
+ * a page the user just interacted with, so it happens here, on the banner's
+ * button, and not in the background; the session it yields is thrown away,
+ * the download is the point. Progress is painted into the status as it comes.
+ */
+async function downloadModel(): Promise<void> {
+  const model = platform.builtInModel;
+  if (!model || (download && "progress" in download)) {
+    return;
+  }
+  clearTimeout(downloadPoll);
+  download = { progress: 0 };
+  renderStatus();
+  try {
+    const session = await model.create({
+      onProgress: (fraction) => {
+        download = { progress: fraction };
+        renderStatus();
+      },
+    });
+    session.destroy();
+  } catch (error) {
+    download = { failed: error instanceof Error ? error.message : String(error) };
+    renderStatus();
+    return;
+  }
+  download = null;
+  await probeAndRender();
 }
 
 function renderStatus(): void {
-  if (!status) {
+  const shown = effectiveStatus(settings, status, download);
+  if (!shown) {
+    // Probing: the banner and the button keep their last state until the answer.
+    el.statusDot.dataset["state"] = "probing";
+    el.statusText.textContent = "Checking";
     return;
   }
-  const header = statusView(settings, status, platform.name);
+  const header = statusView(settings, shown, platform.name);
   el.statusDot.dataset["state"] = header.dot;
   el.statusText.textContent = header.label;
   el.summarizeButton.disabled = !header.summarizeEnabled;
@@ -385,14 +502,24 @@ function renderStatus(): void {
     }
   }
 
-  if (header.banner.showRetry) {
+  if (header.banner.showRetry || header.banner.showDownload) {
     const actions = document.createElement("div");
     actions.className = "banner-actions";
-    const retry = document.createElement("button");
-    retry.type = "button";
-    retry.textContent = "Check again";
-    retry.addEventListener("click", () => void probeAndRender());
-    actions.append(retry);
+    if (header.banner.showDownload) {
+      const fetch = document.createElement("button");
+      fetch.type = "button";
+      fetch.className = "primary";
+      fetch.textContent = "Download model";
+      fetch.addEventListener("click", () => void downloadModel());
+      actions.append(fetch);
+    }
+    if (header.banner.showRetry) {
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.textContent = "Check again";
+      retry.addEventListener("click", () => void probeAndRender());
+      actions.append(retry);
+    }
     banner.append(actions);
   }
 }
@@ -576,6 +703,7 @@ function renderRunError(code: SummarizeErrorCode, message: string, auto: boolean
     "engine-unreachable": "The local model server isn’t reachable. Check the status above.",
     "origin-forbidden": "The model server rejected the extension (set OLLAMA_ORIGINS and restart Ollama).",
     "model-missing": `The selected model isn’t available on the server: ${message}`,
+    "model-unavailable": `${message}. Check the status above.`,
     "empty-summary": "The model finished without writing a summary (thinking models sometimes spend their whole output budget reasoning). Try again, or pick a different model in settings.",
     "engine-error": `The model server reported an error: ${message}`,
   };
@@ -584,7 +712,7 @@ function renderRunError(code: SummarizeErrorCode, message: string, auto: boolean
   p.textContent = friendly[code] ?? message;
   el.summaryOutput.querySelector(".summary-empty")?.remove();
   el.summaryOutput.append(p);
-  if (code === "engine-unreachable" || code === "origin-forbidden") {
+  if (code === "engine-unreachable" || code === "origin-forbidden" || code === "model-unavailable") {
     void probeAndRender();
   }
 }
