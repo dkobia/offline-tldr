@@ -163,7 +163,7 @@ describe("BuiltInEngine", () => {
 describe("createEngineClient", () => {
   it("builds the built-in engine without touching the endpoint", () => {
     const { model } = fakeModel("available");
-    const settings = { engine: "builtin" as const, endpoint: "https://not-local.example", model: "", format: "bullets" as const, maxWords: 150, autoSummarize: false };
+    const settings = { engine: "builtin" as const, endpoint: "https://not-local.example", model: "", apiKey: "", format: "bullets" as const, maxWords: 150, autoSummarize: false };
     expect(createEngineClient(settings, { builtIn: model })).toBeInstanceOf(BuiltInEngine);
     expect(createEngineClient(settings).name).toBe("builtin");
   });

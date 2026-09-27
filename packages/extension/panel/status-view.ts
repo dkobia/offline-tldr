@@ -162,6 +162,16 @@ export function statusView(settings: Settings, status: EngineStatus, platformNam
     };
   }
 
+  if (status.state === "unauthorized") {
+    // The server is up and answering; it only wants a (valid) key.
+    return {
+      dot: "down",
+      label: settings.apiKey ? "Key rejected" : "Needs key",
+      summarizeEnabled: false,
+      banner: unauthorizedBanner(settings, status, label),
+    };
+  }
+
   // A server that is down is "Offline"; the built-in model can only error
   // (a failed download, a refusal), and is not a server that could be off.
   const server = isServerEngine(settings.engine);
@@ -171,6 +181,32 @@ export function statusView(settings: Settings, status: EngineStatus, platformNam
     summarizeEnabled: false,
     banner: downBanner(settings, status, server ? label : BUILT_IN, platformName),
   };
+}
+
+function unauthorizedBanner(settings: Settings, status: Extract<EngineStatus, { state: "unauthorized" }>, label: string): BannerView {
+  const blocks: BannerBlock[] =
+    settings.engine === "omlx"
+      ? [
+          {
+            kind: "steps",
+            steps: [
+              { text: `Copy the API key from oMLX’s settings, or from its admin page at ${settings.endpoint}/admin.` },
+              { text: "It is also stored as auth.api_key in:", command: "~/.omlx/settings.json" },
+              { text: "Paste it under API key in settings." },
+            ],
+          },
+        ]
+      : [
+          {
+            kind: "p",
+            text: "Enter the key the server was started with (for llama.cpp, its --api-key) under API key in settings.",
+          },
+        ];
+  if (status.detail) {
+    blocks.push({ kind: "p", text: `Details: ${status.detail}` });
+  }
+  const title = settings.apiKey ? `${label} rejected the API key` : `${label} needs an API key`;
+  return { tone: "down", title, blocks, showRetry: true, showDownload: false };
 }
 
 function downBanner(
@@ -235,6 +271,15 @@ function downBanner(
         steps: [{ text: "Start the llama.cpp server:", command: "llama-server -m <model.gguf> --port 8080" }],
       });
       break;
+    case "omlx":
+      blocks.push({
+        kind: "steps",
+        steps: [
+          { text: "Install oMLX from omlx.ai if you haven’t yet." },
+          { text: "Open oMLX and start the server (default port 8000)." },
+        ],
+      });
+      break;
     case "custom":
       blocks.push({
         kind: "p",
@@ -277,6 +322,8 @@ export function describeStatusShort(status: EngineStatus, engine: EngineKind): s
       return engine === "ollama"
         ? `${label} is running but blocks browser extensions (set OLLAMA_ORIGINS).`
         : `${label} is running but answered HTTP 403 (check CORS / authentication).`;
+    case "unauthorized":
+      return `${label} is running but needs a valid API key.`;
     case "unreachable":
       return `${label} isn’t reachable at this endpoint.`;
     case "error":

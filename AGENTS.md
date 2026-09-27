@@ -3,7 +3,7 @@
 ## What Offline TL;DR is
 
 Offline TL;DR is a browser extension that extracts, condenses, and synthesizes web page content entirely on the user's machine.
-Summarization runs against an on-device model: the browser's built-in model on Chrome (Gemini Nano, through the Prompt API), or a local inference runtime - Ollama, LM Studio, llama.cpp server, and other localhost endpoints.
+Summarization runs against an on-device model: the browser's built-in model on Chrome (Gemini Nano, through the Prompt API), or a local inference runtime - oMLX, Ollama, LM Studio, llama.cpp server, and other localhost endpoints.
 No page content, no browsing context, and no telemetry ever leaves the device.
 
 Naming: "Offline TL;DR" in prose and UI, `offline-tldr` everywhere else (repo, packages, filenames).
@@ -62,6 +62,8 @@ Load `dist/chrome` via chrome://extensions (Load unpacked) and `dist/firefox` vi
   The built-in model is the default where the browser has one (`defaultSettings` in `lib/settings.ts`), so a fresh install summarizes without installing anything; a saved engine choice is never overridden.
   It needs no model name and no endpoint; `isServerEngine` is the one rule for which settings apply.
   Its context is small, and it does not think: `EngineClient.reasoning` tells the budget whether to reserve thinking headroom, so the built-in model gets the page its window can hold.
+- An API key for an OpenAI-compatible server (oMLX requires one) is a credential: it lives in `Settings.apiKey` in extension-local storage, goes out only as the bearer token to the configured localhost endpoint, and is never logged or shown unmasked.
+  `acceptsApiKey` decides which engines take one; normalization drops it for the others, and switching engines in the form clears it.
 - Manifest changes go in `manifests/base.json` unless genuinely browser-specific.
 
 ## Testing
