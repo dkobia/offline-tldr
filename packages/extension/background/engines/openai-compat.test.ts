@@ -88,6 +88,11 @@ describe("OpenAiCompatEngine.probe", () => {
     expect(await engine.probe()).toEqual({ state: "unauthorized", detail: "Invalid API key: •••• (••••)" });
   });
 
+  it("never quotes a model list that isn't JSON, which could echo the key", async () => {
+    const engine = new OpenAiCompatEngine("omlx", "http://127.0.0.1:8000", "m", fetchStub(() => new Response("Rejected sk-secret", { status: 200 })), "sk-secret");
+    expect(await engine.probe()).toEqual({ state: "error", detail: "The server sent a response that isn’t valid JSON." });
+  });
+
   it("reports unreachable when fetch rejects", async () => {
     const failing = (() => Promise.reject(new TypeError("Failed to fetch"))) as unknown as FetchFn;
     const engine = new OpenAiCompatEngine("llamacpp", "http://localhost:8080", "m", failing);
@@ -165,6 +170,20 @@ describe("OpenAiCompatEngine.summarize", () => {
       "local-key",
     );
     expect(await collect(engine.summarize(request))).toBe("Short.");
+  });
+
+  it("never quotes a stream chunk that isn't JSON", async () => {
+    const engine = new OpenAiCompatEngine(
+      "omlx",
+      "http://127.0.0.1:8000",
+      "m",
+      fetchStub(() => new Response("data: Rejected sk-secret\n\n", { status: 200 })),
+      "sk-secret",
+    );
+    await expect(collect(engine.summarize(request))).rejects.toMatchObject({
+      code: "engine-error",
+      message: "The server sent a response that isn’t valid JSON.",
+    });
   });
 
   it("throws unauthorized with the server's reason on a 401", async () => {
