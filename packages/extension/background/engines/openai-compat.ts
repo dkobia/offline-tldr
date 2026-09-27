@@ -77,7 +77,12 @@ export class OpenAiCompatEngine implements EngineClient {
     if (!response.ok) {
       return { state: "error", detail: `HTTP ${response.status}` };
     }
-    const body = (await response.json()) as ModelsResponse;
+    let body: ModelsResponse;
+    try {
+      body = parseJson<ModelsResponse>(await response.text());
+    } catch (error) {
+      return { state: "error", detail: (error as Error).message };
+    }
     const models = (body.data ?? [])
       .map((model) => model.id ?? "")
       .filter((id) => id.length > 0);
@@ -176,12 +181,25 @@ export class OpenAiCompatEngine implements EngineClient {
     }
 
     for await (const data of sseData(textChunks(response.body))) {
-      const chunk = JSON.parse(data) as ChatCompletionChunk;
+      const chunk = parseJson<ChatCompletionChunk>(data);
       const content = chunk.choices?.[0]?.delta?.content;
       if (content) {
         yield content;
       }
     }
+  }
+}
+
+/**
+ * Parses server JSON. Text that isn't JSON fails with a fixed message: the
+ * parser's own error quotes the start of the text, which could carry an
+ * echoed API key into the panel.
+ */
+function parseJson<T>(text: string): T {
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new EngineError("engine-error", "The server sent a response that isn’t valid JSON.");
   }
 }
 
