@@ -6,6 +6,7 @@ const base: Settings = {
   engine: "ollama",
   endpoint: "http://localhost:11434",
   model: "llama3.2",
+  apiKey: "",
   format: "bullets",
   maxWords: 150,
   autoSummarize: false,
@@ -99,6 +100,13 @@ describe("statusView: down states", () => {
       "chrome",
     );
     expect(commands(llamacpp.banner?.blocks ?? []).join(" ")).toContain("llama-server");
+
+    const omlx = statusView({ ...base, engine: "omlx", endpoint: "http://127.0.0.1:8000" }, { state: "unreachable" }, "chrome");
+    expect(omlx.banner?.title).toBe("oMLX isn’t reachable at http://127.0.0.1:8000");
+    expect(omlx.banner?.blocks).toContainEqual({
+      kind: "steps",
+      steps: [{ text: "Install oMLX from omlx.ai if you haven’t yet." }, { text: "Open oMLX and start the server (default port 8000)." }],
+    });
   });
 
   it("appends the error detail and the Firefox permissions note when applicable", () => {
@@ -204,6 +212,38 @@ describe("effectiveStatus", () => {
     const ollama = { state: "unreachable" as const };
     expect(effectiveStatus(base, ollama, { progress: 0.5 })).toBe(ollama);
     expect(effectiveStatus(base, null, { failed: "x" })).toBeNull();
+  });
+});
+
+describe("statusView: unauthorized", () => {
+  const omlx: Settings = { ...base, engine: "omlx", endpoint: "http://127.0.0.1:8000", model: "gemma" };
+
+  it("asks for oMLX's key, and where to find it, when none is set", () => {
+    const view = statusView(omlx, { state: "unauthorized", detail: "API key required" }, "chrome");
+    expect(view.dot).toBe("down");
+    expect(view.label).toBe("Needs key");
+    expect(view.summarizeEnabled).toBe(false);
+    expect(view.banner?.title).toBe("oMLX needs an API key");
+    expect(view.banner?.showRetry).toBe(true);
+    expect(commands(view.banner?.blocks ?? [])).toEqual(["~/.omlx/settings.json"]);
+    expect(paragraphs(view.banner?.blocks ?? [])).toEqual(["Details: API key required"]);
+  });
+
+  it("says the key was rejected when one is set", () => {
+    const view = statusView({ ...omlx, apiKey: "stale" }, { state: "unauthorized", detail: "Invalid API key" }, "chrome");
+    expect(view.label).toBe("Key rejected");
+    expect(view.banner?.title).toBe("oMLX rejected the API key");
+  });
+
+  it("points other servers at the key they were started with", () => {
+    const view = statusView({ ...base, engine: "llamacpp", endpoint: "http://localhost:8080" }, { state: "unauthorized" }, "chrome");
+    expect(view.banner?.title).toBe("llama.cpp server needs an API key");
+    expect(paragraphs(view.banner?.blocks ?? []).join(" ")).toContain("--api-key");
+    expect(commands(view.banner?.blocks ?? [])).toEqual([]);
+  });
+
+  it("has a one-line summary for the settings view", () => {
+    expect(describeStatusShort({ state: "unauthorized" }, "omlx")).toBe("oMLX is running but needs a valid API key.");
   });
 });
 

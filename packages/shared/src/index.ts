@@ -9,7 +9,7 @@ export type { ExtractedArticle, SummaryFormat, SummaryRequest } from "@offline-t
  * Which on-device model the extension talks to: the browser's own built-in
  * model (Chrome's Gemini Nano, through the Prompt API) or a local server.
  */
-export type EngineKind = "builtin" | "ollama" | "lmstudio" | "llamacpp" | "custom";
+export type EngineKind = "builtin" | "ollama" | "lmstudio" | "llamacpp" | "omlx" | "custom";
 
 export interface Settings {
   engine: EngineKind;
@@ -17,6 +17,12 @@ export interface Settings {
   endpoint: string;
   /** Model identifier as the server knows it, e.g. "llama3.2" or "phi3". Unused by the built-in model. */
   model: string;
+  /**
+   * Bearer token for an OpenAI-compatible server that requires one (oMLX
+   * always does; llama.cpp and LM Studio can). Empty for none. A credential:
+   * stored only in the extension's local storage, sent only to the endpoint.
+   */
+  apiKey: string;
   format: SummaryFormat;
   /** Soft cap on summary length, in words. */
   maxWords: number;
@@ -30,6 +36,8 @@ export type EngineStatus =
   | { state: "unreachable"; detail?: string }
   /** Reachable but the server rejects browser-extension origins (Ollama without OLLAMA_ORIGINS). */
   | { state: "forbidden" }
+  /** Reachable but the server wants an API key (HTTP 401): none was sent, or it was rejected. */
+  | { state: "unauthorized"; detail?: string }
   /** The browser can run its built-in model but has not downloaded it yet; a user gesture in the panel starts that. */
   | { state: "downloadable" }
   /** The browser is downloading its built-in model; `progress` (0 to 1) is known only to the panel that started it. */
@@ -156,6 +164,8 @@ export type SummarizeErrorCode =
   | "no-content"
   | "engine-unreachable"
   | "origin-forbidden"
+  /** The server requires an API key and none was configured, or it rejected the one sent. */
+  | "unauthorized"
   | "model-missing"
   /** The browser's built-in model is not downloaded, still downloading, or not supported on this device. */
   | "model-unavailable"

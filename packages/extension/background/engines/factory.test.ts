@@ -7,6 +7,7 @@ const base: Settings = {
   engine: "ollama",
   endpoint: "http://localhost:11434",
   model: "llama3.2",
+  apiKey: "",
   format: "bullets",
   maxWords: 150,
   autoSummarize: false,
@@ -17,7 +18,19 @@ describe("createEngineClient", () => {
     expect(createEngineClient(base).name).toBe("ollama");
     expect(createEngineClient({ ...base, engine: "lmstudio", endpoint: "http://localhost:1234" }).name).toBe("lmstudio");
     expect(createEngineClient({ ...base, engine: "llamacpp", endpoint: "http://localhost:8080" }).name).toBe("llamacpp");
+    expect(createEngineClient({ ...base, engine: "omlx", endpoint: "http://127.0.0.1:8000" }).name).toBe("omlx");
     expect(createEngineClient({ ...base, engine: "custom", endpoint: "http://localhost:9999" }).name).toBe("custom");
+  });
+
+  it("hands the configured API key to the compat client as a bearer token", async () => {
+    const seen: (string | null)[] = [];
+    const fetchFn = ((_url: RequestInfo | URL, init?: RequestInit) => {
+      seen.push(new Headers(init?.headers).get("authorization"));
+      return Promise.resolve(new Response(JSON.stringify({ data: [] }), { status: 200 }));
+    }) as FetchFn;
+    const client = createEngineClient({ ...base, engine: "omlx", endpoint: "http://127.0.0.1:8000", apiKey: "local-key" }, { fetchFn });
+    await client.probe();
+    expect(seen).toEqual(["Bearer local-key"]);
   });
 
   it("refuses to build a client for a non-local endpoint", () => {

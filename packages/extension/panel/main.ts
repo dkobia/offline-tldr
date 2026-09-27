@@ -21,7 +21,7 @@ import {
   type SummarizePortEvent,
   type TabSummaryState,
 } from "@offline-tldr/shared";
-import { DEFAULT_ENDPOINTS, ENGINE_LABELS, availableEngines, defaultSettings, isLocalEndpoint, isServerEngine, normalizeSettings } from "../lib/settings";
+import { DEFAULT_ENDPOINTS, ENGINE_LABELS, acceptsApiKey, availableEngines, defaultSettings, isLocalEndpoint, isServerEngine, normalizeSettings } from "../lib/settings";
 import { createAutoRun } from "./auto";
 import { applyRunEvent, createTabStream, emptyView, viewFromState, type RunView } from "./tab-stream";
 import { describeStatusShort, effectiveStatus, statusView, type DownloadState } from "./status-view";
@@ -45,6 +45,9 @@ const el = {
   endpointInput: byId<HTMLInputElement>("endpoint-input"),
   modelInput: byId<HTMLInputElement>("model-input"),
   modelOptions: byId<HTMLDataListElement>("model-options"),
+  apiKeyField: byId<HTMLLabelElement>("api-key-field"),
+  apiKeyInput: byId<HTMLInputElement>("api-key-input"),
+  apiKeyHint: byId<HTMLSpanElement>("api-key-hint"),
   maxWordsInput: byId<HTMLInputElement>("max-words-input"),
   autoSummarizeInput: byId<HTMLInputElement>("auto-summarize-input"),
   testConnectionButton: byId<HTMLButtonElement>("test-connection-button"),
@@ -66,9 +69,9 @@ let probeSeq = 0;
 /** Counts saves, so a slow answer to an earlier save never overwrites a newer one (the user's over a probe's model adoption). */
 let settingsSeq = 0;
 /**
- * Counts changes of the probed engine (its kind or endpoint), so a probe's
- * answer for an earlier one is dropped and never read as the new one's
- * readiness. The model name does not change what a probe asks.
+ * Counts changes of the probed engine (its kind, endpoint, or API key), so a
+ * probe's answer for an earlier one is dropped and never read as the new
+ * one's readiness. The model name does not change what a probe asks.
  */
 let engineSeq = 0;
 
@@ -237,6 +240,8 @@ function wireEvents(): void {
     const engine = el.engineSelect.value as EngineKind;
     el.endpointInput.value = DEFAULT_ENDPOINTS[engine];
     el.modelInput.value = "";
+    // A key belongs to the server it was issued by; never carry it to another.
+    el.apiKeyInput.value = "";
     setModelOptions([]);
     renderEngineFields(engine);
   });
@@ -259,17 +264,23 @@ function syncSettingsForm(): void {
   el.engineSelect.value = settings.engine;
   el.endpointInput.value = settings.endpoint;
   el.modelInput.value = settings.model;
+  el.apiKeyInput.value = settings.apiKey;
   el.maxWordsInput.value = String(settings.maxWords);
   el.autoSummarizeInput.checked = settings.autoSummarize;
   setModelOptions(status?.state === "ok" && isServerEngine(settings.engine) ? status.models : []);
   renderEngineFields(settings.engine);
 }
 
-/** The address and model name belong to a server; the built-in model has a note instead. */
+/** The address, model name, and key belong to a server; the built-in model has a note instead. */
 function renderEngineFields(engine: EngineKind): void {
   const server = isServerEngine(engine);
   el.serverSettings.hidden = !server;
   el.engineHint.hidden = server;
+  el.apiKeyField.hidden = !acceptsApiKey(engine);
+  el.apiKeyHint.textContent =
+    engine === "omlx"
+      ? "oMLX requires one: copy it from oMLX’s settings. Kept on this device and sent only to the endpoint above."
+      : "Only if the server requires one. Kept on this device and sent only to the endpoint above.";
   el.testConnectionButton.textContent = server ? "Test connection" : "Check model";
 }
 
@@ -279,6 +290,7 @@ function settingsFromForm(): Settings {
       engine: el.engineSelect.value,
       endpoint: el.endpointInput.value.trim(),
       model: el.modelInput.value.trim(),
+      apiKey: el.apiKeyInput.value.trim(),
       format: el.formatSelect.value,
       maxWords: Number(el.maxWordsInput.value),
       autoSummarize: el.autoSummarizeInput.checked,
@@ -350,7 +362,7 @@ function closeSettings(): void {
  * taken over meanwhile, in which case this answer is stale and dropped.
  */
 async function saveSettings(next: Settings): Promise<void> {
-  if (next.engine !== settings.engine || next.endpoint !== settings.endpoint) {
+  if (next.engine !== settings.engine || next.endpoint !== settings.endpoint || next.apiKey !== settings.apiKey) {
     // Whatever was probed is another engine's readiness; the probe that
     // follows the save establishes the new one's.
     engineSeq += 1;
@@ -702,6 +714,7 @@ function renderRunError(code: SummarizeErrorCode, message: string, auto: boolean
     "no-content": "No readable article text was found on this page.",
     "engine-unreachable": "The local model server isn’t reachable. Check the status above.",
     "origin-forbidden": "The model server rejected the extension (set OLLAMA_ORIGINS and restart Ollama).",
+    unauthorized: "The model server wants an API key, or rejected the one in settings. Check the status above.",
     "model-missing": `The selected model isn’t available on the server: ${message}`,
     "model-unavailable": `${message}. Check the status above.`,
     "empty-summary": "The model finished without writing a summary (thinking models sometimes spend their whole output budget reasoning). Try again, or pick a different model in settings.",
@@ -712,7 +725,7 @@ function renderRunError(code: SummarizeErrorCode, message: string, auto: boolean
   p.textContent = friendly[code] ?? message;
   el.summaryOutput.querySelector(".summary-empty")?.remove();
   el.summaryOutput.append(p);
-  if (code === "engine-unreachable" || code === "origin-forbidden" || code === "model-unavailable") {
+  if (code === "engine-unreachable" || code === "origin-forbidden" || code === "unauthorized" || code === "model-unavailable") {
     void probeAndRender();
   }
 }

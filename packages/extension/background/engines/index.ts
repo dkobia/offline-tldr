@@ -30,5 +30,5 @@ export function createEngineClient(settings: Settings, deps: EngineDeps = {}): E
   if (settings.engine === "ollama") {
     return new OllamaEngine(settings.endpoint, settings.model, fetchFn);
   }
-  return new OpenAiCompatEngine(settings.engine, settings.endpoint, settings.model, fetchFn);
+  return new OpenAiCompatEngine(settings.engine, settings.endpoint, settings.model, fetchFn, settings.apiKey);
 }

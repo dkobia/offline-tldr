@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS, availableEngines, defaultSettings, isLocalEndpoint, isModelAvailable, isServerEngine, normalizeSettings } from "./settings";
+import { DEFAULT_SETTINGS, acceptsApiKey, availableEngines, defaultSettings, isLocalEndpoint, isModelAvailable, isServerEngine, normalizeSettings } from "./settings";
 
 describe("isModelAvailable", () => {
   it("matches exact names and, for Ollama only, the implicit :latest tag", () => {
@@ -57,6 +57,7 @@ describe("normalizeSettings", () => {
       engine: "lmstudio",
       endpoint: "http://localhost:1234/",
       model: "phi3",
+      apiKey: "sk-local",
       format: "executive",
       maxWords: 200,
       autoSummarize: true,
@@ -90,6 +91,19 @@ describe("normalizeSettings", () => {
     expect(normalizeSettings({ engine: "builtin" })).toMatchObject({ engine: "builtin", endpoint: "http://localhost:11434" });
   });
 
+  it("defaults oMLX to the address it listens on", () => {
+    expect(normalizeSettings({ engine: "omlx" }).endpoint).toBe("http://127.0.0.1:8000");
+  });
+
+  it("keeps a trimmed API key only for engines that take one", () => {
+    expect(normalizeSettings({ engine: "omlx", apiKey: "  key  " }).apiKey).toBe("key");
+    expect(normalizeSettings({ engine: "llamacpp", apiKey: "key" }).apiKey).toBe("key");
+    expect(normalizeSettings({ engine: "ollama", apiKey: "key" }).apiKey).toBe("");
+    expect(normalizeSettings({ engine: "builtin", apiKey: "key" }).apiKey).toBe("");
+    expect(normalizeSettings({ engine: "omlx", apiKey: 42 }).apiKey).toBe("");
+    expect(normalizeSettings({ engine: "omlx" }).apiKey).toBe("");
+  });
+
   it("coerces autoSummarize to a real boolean, defaulting off", () => {
     expect(normalizeSettings({}).autoSummarize).toBe(false);
     expect(normalizeSettings({ autoSummarize: true }).autoSummarize).toBe(true);
@@ -107,8 +121,19 @@ describe("defaultSettings", () => {
 
 describe("availableEngines", () => {
   it("offers the built-in model first, and only where the browser has one", () => {
-    expect(availableEngines(true)).toEqual(["builtin", "ollama", "lmstudio", "llamacpp", "custom"]);
-    expect(availableEngines(false)).toEqual(["ollama", "lmstudio", "llamacpp", "custom"]);
+    expect(availableEngines(true)).toEqual(["builtin", "ollama", "lmstudio", "llamacpp", "omlx", "custom"]);
+    expect(availableEngines(false)).toEqual(["ollama", "lmstudio", "llamacpp", "omlx", "custom"]);
+  });
+});
+
+describe("acceptsApiKey", () => {
+  it("is the OpenAI-compatible servers: not Ollama, which has no auth, nor the built-in model", () => {
+    expect(acceptsApiKey("omlx")).toBe(true);
+    expect(acceptsApiKey("lmstudio")).toBe(true);
+    expect(acceptsApiKey("llamacpp")).toBe(true);
+    expect(acceptsApiKey("custom")).toBe(true);
+    expect(acceptsApiKey("ollama")).toBe(false);
+    expect(acceptsApiKey("builtin")).toBe(false);
   });
 });
 

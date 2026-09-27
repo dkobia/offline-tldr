@@ -240,7 +240,7 @@ h2 {
   text-transform: uppercase;
   letter-spacing: 0.09em;
   color: var(--muted);
-  margin: 4px 2px 0;
+  margin: 4px 0 0;
 }
 
 /* ---- Status banner ---- */
@@ -559,9 +559,10 @@ select {
   accent-color: var(--ink);
 }
 
-/* Endpoint, model, and numeric values are data: render them in mono. */
+/* Endpoint, model, key, and numeric values are data: render them in mono. */
 input[type="url"],
 input[type="text"],
+input[type="password"],
 input[type="number"] {
   font-family: var(--font-mono);
 }

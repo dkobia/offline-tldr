@@ -81,7 +81,7 @@
           <span id="engine-hint" class="field-hint" hidden>Gemini Nano runs inside Chrome on this device. Chrome downloads it once and shares it with every site and extension that uses it.</span>
         </label>
 
-        <!-- A local server has an address and a choice of models; the browser's built-in model has neither. -->
+        <!-- A local server has an address, a choice of models, and maybe a key; the browser's built-in model has none of these. -->
         <div id="server-settings" class="server-settings">
           <label class="field">
             <span class="field-label">Endpoint</span>
@@ -94,6 +94,12 @@
             <input id="model-input" type="text" list="model-options" spellcheck="false" placeholder="llama3.2" />
             <datalist id="model-options"></datalist>
             <span id="model-hint" class="field-hint">Use “Test connection” to list the models your server offers.</span>
+          </label>
+
+          <label id="api-key-field" class="field">
+            <span class="field-label">API key</span>
+            <input id="api-key-input" type="password" autocomplete="off" spellcheck="false" placeholder="None" />
+            <span id="api-key-hint" class="field-hint">Only if the server requires one. Kept on this device and sent only to the endpoint above.</span>
           </label>
         </div>
 
